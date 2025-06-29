@@ -1,0 +1,40 @@
+[project]
+name = "pylibextractor"
+version = "0.1.0"
+description = "A Python package for robust lip frame extraction from videos using MediaPipe, designed for visual speech recognition tasks."
+readme = "README.md"
+authors = [
+    { name = "Mehrad Yaghoubi", email = "mehradyaghoubi96@gmail.com" },
+]
+requires-python = ">=3.8"
+dependencies = [
+    "opencv-python>=4.5.0",
+    "numpy>=1.20.0",
+    "mediapipe>=0.10.0",
+    "av>=10.0.0", # PyAV for video processing
+]
+keywords = ["lip-extraction", "visual-speech-recognition", "mediapipe", "video-processing", "lip-reading"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License", # Or your preferred license
+    "Operating System :: OS Independent",
+    "Development Status :: 3 - Alpha", # Current development status
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Multimedia :: Video",
+]
+
+[project.urls]
+Homepage = "https://github.com/MehradYaghoubi/pylibextractor" # Your GitHub repository URL
+"Bug Tracker" = "https://github.com/MehradYaghoubi/pylibextractor/issues"
+
+[build-system]
+requires = ["setuptools>=61.0"] # Standard build tool requirement
+build-backend = "setuptools.build_meta" # Standard build backend for setuptools
+
+# The following section is for `setuptools` to find your package.
+# It ensures that `pip install .` works correctly.
+[tool.setuptools.packages.find]
+where = ["."] # Look for packages in the current directory
+include = ["pylibextractor*"] # Include anything starting with pylibextractor (e.g., pylibextractor, pylibextractor.submodule)
