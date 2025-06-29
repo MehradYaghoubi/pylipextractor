@@ -1,0 +1,25 @@
+# Python specific ignored files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python/
+env/
+venv/
+*.egg-info/
+.pytest_cache/
+.tox/
+
+# Output directories for pylibextractor
+output_data/
+lip_extraction_debug/
+*.npy
+!output_data/*.npy
+
+# IDE specific ignored files
+.idea/
+.vscode/
+
+# Operating System specific files
+.DS_Store
+Thumbs.db

@@ -11,14 +11,14 @@ dependencies = [
     "opencv-python>=4.5.0",
     "numpy>=1.20.0",
     "mediapipe>=0.10.0",
-    "av>=10.0.0", # PyAV for video processing
+    "av>=10.0.0",
 ]
 keywords = ["lip-extraction", "visual-speech-recognition", "mediapipe", "video-processing", "lip-reading"]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License", # Or your preferred license
+    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
-    "Development Status :: 3 - Alpha", # Current development status
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
@@ -30,11 +30,10 @@ Homepage = "https://github.com/MehradYaghoubi/pylibextractor" # Your GitHub repo
 "Bug Tracker" = "https://github.com/MehradYaghoubi/pylibextractor/issues"
 
 [build-system]
-requires = ["setuptools>=61.0"] # Standard build tool requirement
-build-backend = "setuptools.build_meta" # Standard build backend for setuptools
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
 
-# The following section is for `setuptools` to find your package.
-# It ensures that `pip install .` works correctly.
 [tool.setuptools.packages.find]
-where = ["."] # Look for packages in the current directory
-include = ["pylibextractor*"] # Include anything starting with pylibextractor (e.g., pylibextractor, pylibextractor.submodule)
+where = ["."]
+include = ["pylibextractor*"]
+
