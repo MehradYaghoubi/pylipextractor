@@ -100,7 +100,7 @@ class LipExtractor:
         Args:
             frame (np.array): Image frame (assumed RGB format).
             frame_idx (int): Current frame index.
-            debug_type (str): Type of debug frame ('original', 'landmarks', 'resized', 'black_generated', 'clahe_applied').
+            debug_type (str): Type of debug frame ('original', 'landmarks', 'clahe_applied', 'black_generated').
             current_lip_bbox (tuple, optional): Tuple (x1, y1, x2, y2) of the calculated lip bounding box.
             mp_face_landmarks (mp.solution.face_mesh.NormalizedLandmarkList, optional): Raw MediaPipe landmarks.
         """
@@ -147,7 +147,7 @@ class LipExtractor:
         
         Args:
             current_bbox (Tuple[int, int, int, int], optional): Bounding box (x1, y1, x2, y2) for the current frame.
-                                                                  `None` if no face/lip was detected.
+                                                                `None` if no face/lip was detected.
         Returns:
             Tuple[int, int, int, int]: The smoothed bounding box.
         """
@@ -188,8 +188,8 @@ class LipExtractor:
         Args:
             video_path (Union[str, Path]): Path to the input video file (e.g., MP4, MPG).
             output_npy_path (Union[str, Path], optional): Path to the .npy file where the extracted
-                                                          lip frames will be saved. If `None`,
-                                                          frames are only returned, not saved.
+                                                           lip frames will be saved. If `None`,
+                                                           frames are only returned, not saved.
             
         Returns:
             Optional[np.ndarray]: A NumPy array of processed lip frames in RGB format
@@ -344,7 +344,7 @@ class LipExtractor:
                                 raw_lip_bbox = (x1_final, y1_final, x2_final, y2_final)
                             else:
                                 raw_lip_bbox = None # Bounding box is too small or invalid after adjustments
-                    
+                        
                     # Apply temporal smoothing to the raw bounding box (or its absence)
                     smoothed_lip_bbox = self._apply_temporal_smoothing(raw_lip_bbox)
                     x1_smoothed, y1_smoothed, x2_smoothed, y2_smoothed = smoothed_lip_bbox
@@ -361,10 +361,20 @@ class LipExtractor:
                     if x2_smoothed > x1_smoothed and y2_smoothed > y1_smoothed:
                         lip_cropped_frame = image_rgb[y1_smoothed:y2_smoothed, x1_smoothed:x2_smoothed]
                         
-                        # Resize the cropped lip region to the target output dimensions
-                        final_resized_lip = cv2.resize(lip_cropped_frame, (self.config.IMG_W, self.config.IMG_H), interpolation=cv2.INTER_AREA)
+                        # Determine interpolation method for resizing: INTER_AREA for downscaling, INTER_LANCZOS4 for upscaling.
+                        current_crop_width = lip_cropped_frame.shape[1]
+                        current_crop_height = lip_cropped_frame.shape[0]
+
+                        if current_crop_width > self.config.IMG_W or current_crop_height > self.config.IMG_H:
+                            # If the cropped region is larger than target, we are downscaling (shrinking)
+                            interpolation_method = cv2.INTER_AREA
+                        else:
+                            # If the cropped region is smaller or equal to target, we are upscaling (enlarging)
+                            interpolation_method = cv2.INTER_LANCZOS4 # Changed from cv2.INTER_CUBIC to INTER_LANCZOS4
                         
-                        # --- Apply CLAHE for illumination/contrast normalization (NEW CODE BLOCK) ---
+                        final_resized_lip = cv2.resize(lip_cropped_frame, (self.config.IMG_W, self.config.IMG_H), interpolation=interpolation_method)
+                        
+                        # --- Apply CLAHE for illumination/contrast normalization ---
                         processed_lip_frame = final_resized_lip.copy() # Start with the resized frame
                         if self.config.APPLY_CLAHE and self.clahe_obj is not None:
                             # CLAHE needs grayscale image. Convert RGB to YCrCb and apply CLAHE to Y (luminance) channel.
