@@ -15,18 +15,20 @@ warnings.filterwarnings("ignore", category=UserWarning, module="mediapipe")
 os.environ['GLOG_minloglevel'] = '2' # Suppress all GLOG messages below WARNING level.
 # --- End suppression ---
 
-# IMPORTANT: CORRECTED AND DEFINITIVE LIPS_MESH_LANDMARKS_INDICES
-# This list is based on common and verified MediaPipe Face Mesh landmark mappings for the lips.
+# IMPORTANT: UPDATED AND CORRECTED LIPS_MESH_LANDMARKS_INDICES
+# This list is derived from direct visual inspection of the MediaPipe Face Mesh,
+# focusing EXCLUSIVELY on the outer (vermilion) and inner lip contours.
 LIPS_MESH_LANDMARKS_INDICES = sorted(list(set([
-# Outer Lip (Vermilion Border)
-61, 185, 40, 39, 37, 0, 267, 269, 270, 409, # Upper
-291, 375, 321, 314, 405, 304, 303, 302, 292, 306, # Lower
-# Inner Lip (Mouth Opening)
-78, 191, 80, 81, 82, 13, 312, 311, 310, 415, # Upper
-87, 178, 88, 95, 181, 85, 182, 16, 91, 14, 317, 402, 320, 318, 324, 308, # Lower & Sides
-# Mouth Corners (Crucial for definition)
-17, 267
+    # Outer Lip (Vermilion Border)
+    61, 185, 40, 39, 37, 0, 267, 269, 270, 409, # Upper
+    291, 375, 321, 314, 405, 304, 303, 302, 292, 306, # Lower
+    # Inner Lip (Mouth Opening)
+    78, 191, 80, 81, 82, 13, 312, 311, 310, 415, # Upper
+    87, 178, 88, 95, 181, 85, 182, 16, 91, 14, 317, 402, 320, 318, 324, 308, # Lower & Sides
+    # Mouth Corners (Crucial for definition)
+    17, 267
 ])))
+
 
 class LipExtractor:
     """
@@ -49,6 +51,17 @@ class LipExtractor:
         # History for temporal smoothing of bounding boxes
         self.bbox_history = [] 
         self.SMOOTHING_WINDOW_SIZE = 5 # Size of the moving average window for bounding box smoothing
+
+        # Initialize CLAHE object if enabled in config
+        self.clahe_obj = None
+        if self.config.APPLY_CLAHE:
+            # CLAHE (Contrast Limited Adaptive Histogram Equalization) is used for
+            # improving the contrast of images, particularly in cases of varying illumination.
+            # It operates on small regions of the image (tiles) rather than the entire image.
+            self.clahe_obj = cv2.createCLAHE(
+                clipLimit=self.config.CLAHE_CLIP_LIMIT,
+                tileGridSize=self.config.CLAHE_TILE_GRID_SIZE
+            )
 
     def _initialize_mediapipe_if_not_set(self):
         """
@@ -87,7 +100,7 @@ class LipExtractor:
         Args:
             frame (np.array): Image frame (assumed RGB format).
             frame_idx (int): Current frame index.
-            debug_type (str): Type of debug frame ('original', 'landmarks', 'resized', 'black_generated').
+            debug_type (str): Type of debug frame ('original', 'landmarks', 'resized', 'black_generated', 'clahe_applied').
             current_lip_bbox (tuple, optional): Tuple (x1, y1, x2, y2) of the calculated lip bounding box.
             mp_face_landmarks (mp.solution.face_mesh.NormalizedLandmarkList, optional): Raw MediaPipe landmarks.
         """
@@ -98,11 +111,14 @@ class LipExtractor:
         debug_dir.mkdir(parents=True, exist_ok=True)
 
         display_frame = frame.copy()
+        # Ensure frame is 3-channel for text overlay if it's grayscale
+        if len(display_frame.shape) == 2: # If grayscale, convert to BGR for text overlay and saving
+            display_frame = cv2.cvtColor(display_frame, cv2.COLOR_GRAY2BGR)
+        
         cv2.putText(display_frame, f"{debug_type.capitalize()} Frame {frame_idx}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
         if debug_type == 'landmarks' and mp_face_landmarks is not None:
             # Draw all detected face mesh landmarks (for general debug)
-            # You might want to remove this if it's too noisy, but it helps verify face detection.
             for lm_idx_all, lm in enumerate(mp_face_landmarks.landmark):
                 x, y = int(lm.x * frame.shape[1]), int(lm.y * frame.shape[0])
                 color = (0, 255, 0) # Default green for all landmarks
@@ -116,7 +132,11 @@ class LipExtractor:
                 cv2.rectangle(display_frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 0, 255), 2) # Red rectangle for lip bbox
         
         # Convert to BGR for OpenCV saving
-        display_frame_bgr = cv2.cvtColor(display_frame, cv2.COLOR_RGB2BGR)
+        if len(display_frame.shape) == 3 and display_frame.shape[2] == 3: # Only convert if it's already RGB
+            display_frame_bgr = cv2.cvtColor(display_frame, cv2.COLOR_RGB2BGR)
+        else: # Otherwise, it might already be BGR or grayscale, keep as is
+            display_frame_bgr = display_frame
+            
         cv2.imwrite(str(debug_dir / f"{debug_type}_{frame_idx:04d}.png"), display_frame_bgr)
 
 
@@ -344,10 +364,31 @@ class LipExtractor:
                         # Resize the cropped lip region to the target output dimensions
                         final_resized_lip = cv2.resize(lip_cropped_frame, (self.config.IMG_W, self.config.IMG_H), interpolation=cv2.INTER_AREA)
                         
-                        # Draw landmarks on this final resized frame ONLY if INCLUDE_LANDMARKS_ON_FINAL_OUTPUT is True
+                        # --- Apply CLAHE for illumination/contrast normalization (NEW CODE BLOCK) ---
+                        processed_lip_frame = final_resized_lip.copy() # Start with the resized frame
+                        if self.config.APPLY_CLAHE and self.clahe_obj is not None:
+                            # CLAHE needs grayscale image. Convert RGB to YCrCb and apply CLAHE to Y (luminance) channel.
+                            # This preserves color information while enhancing contrast.
+                            ycrcb_image = cv2.cvtColor(processed_lip_frame, cv2.COLOR_RGB2YCrCb)
+                            y_channel, cr_channel, cb_channel = cv2.split(ycrcb_image)
+                            
+                            # Apply CLAHE to the Y channel
+                            clahe_y_channel = self.clahe_obj.apply(y_channel)
+                            
+                            # Merge the enhanced Y channel back with Cr and Cb channels
+                            merged_ycrcb = cv2.merge([clahe_y_channel, cr_channel, cb_channel])
+                            
+                            # Convert back to RGB
+                            processed_lip_frame = cv2.cvtColor(merged_ycrcb, cv2.COLOR_YCrCb2RGB)
+
+                            if self.config.SAVE_DEBUG_FRAMES:
+                                self._debug_frame_processing(processed_lip_frame, frame_idx, 'clahe_applied')
+                        # --- End CLAHE application ---
+
+                        # Draw landmarks on this final processed frame ONLY if INCLUDE_LANDMARKS_ON_FINAL_OUTPUT is True
                         if self.config.INCLUDE_LANDMARKS_ON_FINAL_OUTPUT and mp_face_landmarks:
                             # Remap original MediaPipe landmarks (from the full frame) to the coordinates
-                            # of this specific final_resized_lip frame.
+                            # of this specific processed_lip_frame.
                             x_offset_for_mapping = smoothed_lip_bbox[0] 
                             y_offset_for_mapping = smoothed_lip_bbox[1]
                             
@@ -372,12 +413,14 @@ class LipExtractor:
                                         final_x_lm = int(relative_x_px * scale_x_to_output)
                                         final_y_lm = int(relative_y_px * scale_y_to_output)
                                         
-                                        # Draw a small circle for each landmark on the `final_resized_lip` frame
-                                        cv2.circle(final_resized_lip, (final_x_lm, final_y_lm), 1, (0, 255, 0), -1) # Green dots
+                                        # Draw a small circle for each landmark on the `processed_lip_frame`
+                                        cv2.circle(processed_lip_frame, (final_x_lm, final_y_lm), 1, (0, 255, 0), -1) # Green dots
                                         
-                        processed_frames_temp_list.append(final_resized_lip)
+                        processed_frames_temp_list.append(processed_lip_frame) # Append the processed (CLAHE-applied) frame
                         if self.config.SAVE_DEBUG_FRAMES:
-                            self._debug_frame_processing(final_resized_lip, frame_idx, 'resized')
+                            # No separate 'resized' debug frame if CLAHE is applied, as 'clahe_applied' is the final stage before landmark drawing
+                            if not self.config.APPLY_CLAHE: # Only save 'resized' if CLAHE was NOT applied
+                                self._debug_frame_processing(final_resized_lip, frame_idx, 'resized')
                     else:
                         # If the smoothed bounding box is invalid, append a black frame
                         black_frame = np.zeros((self.config.IMG_H, self.config.IMG_W, 3), dtype=np.uint8)

@@ -8,8 +8,8 @@ import shutil
 # Add the parent directory (project root) to sys.path to allow importing package modules
 sys.path.append(str(Path(__file__).resolve().parent))
 
-from pylibextractor.lip_extractor import LipExtractor
-from pylibextractor.config import MainConfig
+from pylipextractor.lip_extractor import LipExtractor
+from pylipextractor.config import MainConfig
 
 def main():
     """
@@ -47,8 +47,24 @@ def main():
     # extracted NPY frames. These frames will then be saved with dots on them.
     # This is useful for visual inspection of the output, but typically NOT for training
     # models that expect clean, unannotated lip images.
-    config.INCLUDE_LANDMARKS_ON_FINAL_OUTPUT = True
+    config.INCLUDE_LANDMARKS_ON_FINAL_OUTPUT = False
     # If you enable landmarks on final output, it's recommended to also save debug frames
+
+    # --- New: Illumination and Contrast Normalization Settings (CLAHE) ---
+    #config.APPLY_CLAHE = True  # Set to True to apply CLAHE for illumination/contrast normalization
+    #config.CLAHE_CLIP_LIMIT = 2.0  # Threshold for contrast limiting (recommended: 1.0-4.0)
+    #config.CLAHE_TILE_GRID_SIZE = (8, 8) # Size of grid for histogram equalization (e.g., (8,8) or (16,16))
+
+    # --- New: Pre-processing Filters (placeholder for future, currently no effect) ---
+    # Will be implemented in the next step.
+    #config.APPLY_GAUSSIAN_BLUR = False # Set to True to apply Gaussian blur
+    #config.GAUSSIAN_KERNEL_SIZE = (5, 5) # Kernel size for Gaussian blur (should be odd, e.g., (3,3), (5,5))
+    #config.APPLY_MEDIAN_BLUR = False # Set to True to apply Median blur
+    #config.MEDIAN_KERNEL_SIZE = 5 # Kernel size for Median blur (should be odd, e.g., 3, 5)
+
+    # --- Output Organization Settings (placeholder for future, currently no effect) ---
+    #config.DEFAULT_OUTPUT_BASE_DIR = Path("output_data") # Default directory for saving extracted NPYs
+    #config.ORGANIZE_OUTPUT_BY_VIDEO_NAME = True # If True, will save NPYs in subfolders based on video name
 
 
     # Clear previous debug directory if saving debug frames is enabled

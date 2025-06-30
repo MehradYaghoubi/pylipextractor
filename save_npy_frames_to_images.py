@@ -9,7 +9,7 @@ import shutil
 # Add the parent directory (project root) to sys.path to allow importing package modules
 sys.path.append(str(Path(__file__).resolve().parent))
 
-from pylibextractor.lip_extractor import LipExtractor
+from pylipextractor.lip_extractor import LipExtractor
 
 def main():
     """

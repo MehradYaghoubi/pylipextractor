@@ -29,13 +29,29 @@ class LipExtractionConfig:
 
     # --- Debugging & Output Customization Settings ---
     DEBUG_OUTPUT_DIR = Path("./lip_extraction_debug") # Directory to save debug frames
-    MAX_DEBUG_FRAMES = 5 # Maximum number of debug frames to save per video.
+    MAX_DEBUG_FRAMES = 20 # Maximum number of debug frames to save per video.
     SAVE_DEBUG_FRAMES = False # Set to True to save intermediate debug frames.
     
     # If True, MediaPipe lip landmarks will be drawn on the final extracted lip frames
     # (i.e., the frames saved in the .npy file and later converted to images).
     # This is for visualization/debugging of the final output, not typically for model training.
     INCLUDE_LANDMARKS_ON_FINAL_OUTPUT = False
+
+    # --- New: Illumination and Contrast Normalization Settings (CLAHE) ---
+    APPLY_CLAHE = True  # Set to True to apply CLAHE for illumination/contrast normalization
+    CLAHE_CLIP_LIMIT = 2.0  # Threshold for contrast limiting (recommended: 1.0-4.0)
+    CLAHE_TILE_GRID_SIZE = (8, 8) # Size of grid for histogram equalization (e.g., (8,8) or (16,16))
+
+    # --- New: Pre-processing Filters (placeholder for future, currently no effect) ---
+    # Will be implemented in the next step.
+    APPLY_GAUSSIAN_BLUR = False # Set to True to apply Gaussian blur
+    GAUSSIAN_KERNEL_SIZE = (5, 5) # Kernel size for Gaussian blur (should be odd, e.g., (3,3), (5,5))
+    APPLY_MEDIAN_BLUR = False # Set to True to apply Median blur
+    MEDIAN_KERNEL_SIZE = 5 # Kernel size for Median blur (should be odd, e.g., 3, 5)
+
+    # --- Output Organization Settings (placeholder for future, currently no effect) ---
+    DEFAULT_OUTPUT_BASE_DIR = Path("output_data") # Default directory for saving extracted NPYs
+    ORGANIZE_OUTPUT_BY_VIDEO_NAME = True # If True, will save NPYs in subfolders based on video name
 
 
 class MainConfig:
