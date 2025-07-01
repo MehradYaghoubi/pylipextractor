@@ -8,72 +8,34 @@ import shutil
 # Add the parent directory (project root) to sys.path to allow importing package modules
 sys.path.append(str(Path(__file__).resolve().parent))
 
+# Import LipExtractor only; config access is now via LipExtractor.config
 from pylipextractor.lip_extractor import LipExtractor
-from pylipextractor.config import MainConfig
 
 def main():
     """
     Main entry point for demonstrating lip frame extraction.
     This script will extract lip frames and save them to a .npy file.
     """
-    # 1. Initialize configuration
-
-
-    config = MainConfig().lip_extraction
+    # 1. Access and optionally modify configuration directly via LipExtractor.config
+    # Default configurations are automatically loaded from pylibextractor/config.py
+    # To override settings, simply assign new values to LipExtractor.config attributes:
     
-    #config.IMG_H = 48 # Desired height for the output lip frames
-    #config.IMG_W = 96 # Desired width for the output lip frames
-
-    #config.LIP_PROPORTIONAL_MARGIN_X = 0.20 # Horizontal margin as a proportion of lip width
-    #config.LIP_PROPORTIONAL_MARGIN_Y = 0.30 # Vertical margin as a proportion of lip height
-
-    #config.LIP_PADDING_LEFT_PX = 0
-    #config.LIP_PADDING_RIGHT_PX = 0
-    #config.LIP_PADDING_TOP_PX = 0
-    #config.LIP_PADDING_BOTTOM_PX = 0
-
-    #NUM_CPU_CORES = 4 # Number of CPU cores for parallel processing (if implemented in batch mode).
-    #MAX_BLACK_FRAMES_PERCENTAGE = 15.0 # Max allowed percentage of black frames in the output clip.
-
-    # --- Configure Debugging and Output Landmarks ---
-    # Set to True to save intermediate debug frames (original, landmarks, cropped, resized).
-    # Debug frames will be saved in the directory specified by config.DEBUG_OUTPUT_DIR.
-
-    config.SAVE_DEBUG_FRAMES = True
-    #config.DEBUG_OUTPUT_DIR = Path("./my_custom_debug_output") # Directory to save debug frames
-    #config.MAX_DEBUG_FRAMES = 5 # Maximum number of debug frames to save per video.
-
-    # Set to True if you want MediaPipe lip landmarks to be drawn directly ON the FINAL
-    # extracted NPY frames. These frames will then be saved with dots on them.
-    # This is useful for visual inspection of the output, but typically NOT for training
-    # models that expect clean, unannotated lip images.
-    config.INCLUDE_LANDMARKS_ON_FINAL_OUTPUT = False
-    # If you enable landmarks on final output, it's recommended to also save debug frames
-
-    # --- New: Illumination and Contrast Normalization Settings (CLAHE) ---
-    #config.APPLY_CLAHE = True  # Set to True to apply CLAHE for illumination/contrast normalization
-    #config.CLAHE_CLIP_LIMIT = 2.0  # Threshold for contrast limiting (recommended: 1.0-4.0)
-    #config.CLAHE_TILE_GRID_SIZE = (8, 8) # Size of grid for histogram equalization (e.g., (8,8) or (16,16))
-
-    # --- New: Pre-processing Filters (placeholder for future, currently no effect) ---
-    # Will be implemented in the next step.
-    #config.APPLY_GAUSSIAN_BLUR = False # Set to True to apply Gaussian blur
-    #config.GAUSSIAN_KERNEL_SIZE = (5, 5) # Kernel size for Gaussian blur (should be odd, e.g., (3,3), (5,5))
-    #config.APPLY_MEDIAN_BLUR = False # Set to True to apply Median blur
-    #config.MEDIAN_KERNEL_SIZE = 5 # Kernel size for Median blur (should be odd, e.g., 3, 5)
-
-    # --- Output Organization Settings (placeholder for future, currently no effect) ---
-    #config.DEFAULT_OUTPUT_BASE_DIR = Path("output_data") # Default directory for saving extracted NPYs
-    #config.ORGANIZE_OUTPUT_BY_VIDEO_NAME = True # If True, will save NPYs in subfolders based on video name
-
+    # Example: Override some default settings for this run
+    LipExtractor.config.SAVE_DEBUG_FRAMES = True
+    LipExtractor.config.MAX_DEBUG_FRAMES = 5 
+    LipExtractor.config.INCLUDE_LANDMARKS_ON_FINAL_OUTPUT = False
+    LipExtractor.config.APPLY_CLAHE = True 
+    # LipExtractor.config.IMG_H = 48 # Example: Change output height
+    # LipExtractor.config.IMG_W = 96 # Example: Change output width
+    # LipExtractor.config.LIP_PROPORTIONAL_MARGIN_X = 0.20 # Example: Adjust margin
 
     # Clear previous debug directory if saving debug frames is enabled
-    if config.SAVE_DEBUG_FRAMES and config.DEBUG_OUTPUT_DIR.exists():
-        shutil.rmtree(config.DEBUG_OUTPUT_DIR)
-        print(f"Debug directory '{config.DEBUG_OUTPUT_DIR}' cleared.")
+    if LipExtractor.config.SAVE_DEBUG_FRAMES and LipExtractor.config.DEBUG_OUTPUT_DIR.exists():
+        shutil.rmtree(LipExtractor.config.DEBUG_OUTPUT_DIR)
+        print(f"Debug directory '{LipExtractor.config.DEBUG_OUTPUT_DIR}' cleared.")
 
-    # 2. Create an instance of LipExtractor
-    extractor = LipExtractor(config)
+    # 2. Create an instance of LipExtractor (no arguments needed for config)
+    extractor = LipExtractor()
 
     # 3. Define the path to the input video (ensure this file exists)
     # Place a short video file (e.g., 'bbar8a.mpg') in the same directory as this script.
@@ -87,7 +49,8 @@ def main():
     # 4. Define the path for the output .npy file
     # The output directory 'output_data' will be created if it doesn't exist.
     output_npy_directory = Path("./output_data")
-    output_npy_filename = input_video_path.stem + "_lips.npy" # Creates filename like 'bbar8a_lips.npy'
+    # Naming the NPY file directly from the video's stem (e.g., 'bbar8a.npy')
+    output_npy_filename = input_video_path.stem + ".npy" 
     output_npy_path = output_npy_directory / output_npy_filename
     
     print(f"Output .npy file will be saved to: '{output_npy_path}' if extraction is successful.", flush=True)

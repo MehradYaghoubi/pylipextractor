@@ -20,10 +20,11 @@ def main():
 
     # 1. Define the path to your input .npy file
     # Make sure this path points to the .npy file created by example_usage.py
-    input_npy_path = Path("./output_data/bbar8a_lips.npy") # <--- Replace with your .npy file path if different
+    # This path now expects the NPY file to be named directly after the video (e.g., 'bbar8a.npy')
+    input_npy_path = Path("./output_data/bbar8a.npy") 
 
     # 2. Define the output directory for saving individual image frames
-    output_images_dir = Path("./extracted_lip_images") # <--- New folder for saving images
+    output_images_dir = Path("./extracted_lip_images") 
 
     # Check if the input NPY file exists
     if not input_npy_path.exists():
@@ -60,7 +61,7 @@ def main():
         
         # Optional: Print progress
         if (i + 1) % 100 == 0 or (i + 1) == loaded_frames.shape[0]:
-            print(f"  Saved {i + 1} / {loaded_frames.shape[0]} frames.", flush=True)
+            print(f"    Saved {i + 1} / {loaded_frames.shape[0]} frames.", flush=True)
 
     print(f"Successfully saved all {loaded_frames.shape[0]} frames as images to '{output_images_dir}'.", flush=True)
     print("--- NPY Frame to Image Conversion Complete ---", flush=True)

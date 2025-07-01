@@ -29,6 +29,8 @@ LIPS_MESH_LANDMARKS_INDICES = sorted(list(set([
     17, 267
 ])))
 
+# Import MainConfig here so LipExtractor can manage it as a class-level attribute
+from pylipextractor.config import MainConfig
 
 class LipExtractor:
     """
@@ -36,18 +38,23 @@ class LipExtractor:
     This class crops and resizes lip frames, returning them as a NumPy array.
     It also provides utilities for loading previously saved NPY files.
     """
-    def __init__(self, config):
-        """
-        Initializes the LipExtractor with provided configuration.
+    # Class-level attribute to hold MediaPipe model instance, initialized once for all objects
+    _mp_face_mesh_instance = None 
 
-        Args:
-            config (LipExtractionConfig): Configuration object containing image dimensions,
-                                          padding settings, and other parameters.
+    # Class-level attribute to hold the configuration.
+    # Users can access and modify this directly: LipExtractor.config.IMG_H = ...
+    config = MainConfig().lip_extraction 
+
+    def __init__(self):
         """
-        self.config = config
-        self.mp_face_mesh = None # MediaPipe Face Mesh is initialized lazily when first needed
+        Initializes the LipExtractor.
+        Configuration is managed by the class-level attribute `LipExtractor.config`.
+        """
+        # Ensure MediaPipe model is loaded/initialized for this process
         self._initialize_mediapipe_if_not_set()
-        
+        # Assign the class-level MediaPipe instance to the object for convenient access
+        self.mp_face_mesh = LipExtractor._mp_face_mesh_instance
+
         # History for temporal smoothing of bounding boxes
         self.bbox_history = [] 
         self.SMOOTHING_WINDOW_SIZE = 5 # Size of the moving average window for bounding box smoothing
@@ -55,21 +62,19 @@ class LipExtractor:
         # Initialize CLAHE object if enabled in config
         self.clahe_obj = None
         if self.config.APPLY_CLAHE:
-            # CLAHE (Contrast Limited Adaptive Histogram Equalization) is used for
-            # improving the contrast of images, particularly in cases of varying illumination.
-            # It operates on small regions of the image (tiles) rather than the entire image.
             self.clahe_obj = cv2.createCLAHE(
                 clipLimit=self.config.CLAHE_CLIP_LIMIT,
                 tileGridSize=self.config.CLAHE_TILE_GRID_SIZE
             )
 
-    def _initialize_mediapipe_if_not_set(self):
+    @classmethod
+    def _initialize_mediapipe_if_not_set(cls):
         """
         Initializes the MediaPipe Face Mesh model if it hasn't been initialized yet.
-        This ensures the model is loaded only once per process.
+        This ensures the model is loaded only once across all instances and processes.
         """
-        if self.mp_face_mesh is None:
-            self.mp_face_mesh = mp.solutions.face_mesh.FaceMesh(
+        if cls._mp_face_mesh_instance is None:
+            cls._mp_face_mesh_instance = mp.solutions.face_mesh.FaceMesh(
                 static_image_mode=False,
                 max_num_faces=1, # Assume one dominant face in the video
                 min_detection_confidence=0.5,
@@ -188,8 +193,8 @@ class LipExtractor:
         Args:
             video_path (Union[str, Path]): Path to the input video file (e.g., MP4, MPG).
             output_npy_path (Union[str, Path], optional): Path to the .npy file where the extracted
-                                                           lip frames will be saved. If `None`,
-                                                           frames are only returned, not saved.
+                                                          lip frames will be saved. If `None`,
+                                                          frames are only returned, not saved.
             
         Returns:
             Optional[np.ndarray]: A NumPy array of processed lip frames in RGB format
@@ -197,7 +202,8 @@ class LipExtractor:
                                   Returns `None` if an error occurs during processing or
                                   if the extracted clip is deemed invalid (e.g., too many black frames).
         """
-        self._initialize_mediapipe_if_not_set() # Ensure MediaPipe is loaded for this process
+        # Ensure MediaPipe is loaded for this process instance
+        # Access the class-level MediaPipe instance via self.mp_face_mesh (set in __init__)
         
         video_path = Path(video_path) # Convert to Path object for consistent handling
 
@@ -251,7 +257,8 @@ class LipExtractor:
                     if self.config.SAVE_DEBUG_FRAMES:
                         self._debug_frame_processing(image_rgb, frame_idx, 'original')
                     
-                    results = self.mp_face_mesh.process(image_rgb)
+                    # Use the MediaPipe instance attached to this object
+                    results = self.mp_face_mesh.process(image_rgb) # <--- Using self.mp_face_mesh here
                     
                     raw_lip_bbox = None
                     mp_face_landmarks = None # Store MediaPipe landmarks to potentially draw on output
@@ -370,7 +377,7 @@ class LipExtractor:
                             interpolation_method = cv2.INTER_AREA
                         else:
                             # If the cropped region is smaller or equal to target, we are upscaling (enlarging)
-                            interpolation_method = cv2.INTER_LANCZOS4 # Changed from cv2.INTER_CUBIC to INTER_LANCZOS4
+                            interpolation_method = cv2.INTER_LANCZOS4 
                         
                         final_resized_lip = cv2.resize(lip_cropped_frame, (self.config.IMG_W, self.config.IMG_H), interpolation=interpolation_method)
                         
