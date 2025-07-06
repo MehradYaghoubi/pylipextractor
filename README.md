@@ -1,6 +1,6 @@
 # PyLipExtractor
 
-A Python package for robust lip frame extraction from videos using MediaPipe, designed specifically for visual speech recognition and lip-reading tasks. It provides a streamlined, configurable process to convert raw video into ready-to-use lip sequences.
+A Python package for robust lip frame extraction from videos using MediaPipe, designed specifically for visual speech recognition (VSR) and lip-reading tasks. It provides a streamlined, configurable process to convert raw video into ready-to-use lip sequences, ideal for deep learning model training.
 
 ## Features
 
@@ -14,45 +14,43 @@ A Python package for robust lip frame extraction from videos using MediaPipe, de
 
 ## Installation
 
-Currently, you can install the dependencies and run the package locally:
+You can easily install pylipextractor using pip directly from PyPI. Ensure you have a compatible Python version (3.8 or newer) installed.
+
+```bash
+pip install pylipextractor
+```
+For Development (Optional)
+If you plan to contribute to the project or need an editable installation, follow these steps:
 
 ```bash
 # First, clone the repository
-git clone [https://github.com/your_username/pylibextractor.git](https://github.com/your_username/pylibextractor.git)
-cd pylibextractor
+git clone https://github.com/MehradYaghoubi/pylipextractor.git
+cd pylipextractor
 
-# Install PyLipExtractor directly from PyPI
-pip install pylibextractor
------
-or
------
-# Install the required dependencies
-pip install -e . # This installs your package in editable mode and its dependencies
+# Install the package in editable mode along with its dependencies
+pip install -e .
 ```
-
-(Note: Once the package is fully built and potentially published to PyPI, the installation command will be simpler, e.g., pip install pylibextractor)3
 
 ## Usage
 See example_usage.py in the project root for a full demonstration on how to use the LipExtractor class to process a video and save the lip frames.
 
 Example:
 ```bash
-import sys
 from pathlib import Path
-from pylibextractor.lip_extractor import LipExtractor
+from pylipextractor.lip_extractor import LipExtractor
 
-# Set your video path (e.g., ensure 'bbar8a.mpg' is in your project root or adjust path)
-input_video_path = Path("bbar8a.mpg") 
+# Set your video path (e.g., ensure 'bbar8a.mpg' is in your current working directory or adjust path)
+input_video_path = Path("bbar8a.mpg")
 output_npy_directory = Path("./output_data")
-output_npy_filename = input_video_path.stem + ".npy" 
+output_npy_filename = input_video_path.stem + ".npy"
 output_npy_path = output_npy_directory / output_npy_filename
 
 # --- Configure LipExtractor settings (optional, defaults are from config.py) ---
 # You can override any default setting like this:
 LipExtractor.config.SAVE_DEBUG_FRAMES = True
 LipExtractor.config.MAX_DEBUG_FRAMES = 10 # Save up to 10 debug frames
-LipExtractor.config.APPLY_CLAHE = True    # Ensure CLAHE is applied for contrast
-# LipExtractor.config.IMG_H = 64          # Example: Change output frame height
+LipExtractor.config.APPLY_CLAHE = True   # Ensure CLAHE is applied for contrast
+# LipExtractor.config.IMG_H = 64         # Example: Change output frame height
 
 # Create an instance of the extractor
 extractor = LipExtractor()
