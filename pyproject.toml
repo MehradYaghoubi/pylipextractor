@@ -1,5 +1,5 @@
 [project]
-name = "pylibextractor"
+name = "pylipextractor"
 version = "1.0.0"
 description = "A Python package for robust lip frame extraction from videos using MediaPipe, designed for visual speech recognition tasks."
 readme = "README.md"
@@ -26,8 +26,8 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/MehradYaghoubi/pylibextractor" # Your GitHub repository URL
-"Bug Tracker" = "https://github.com/MehradYaghoubi/pylibextractor/issues"
+Homepage = "https://github.com/MehradYaghoubi/pylipextractor" # Your GitHub repository URL
+"Bug Tracker" = "https://github.com/MehradYaghoubi/pylipextractor/issues"
 
 [build-system]
 requires = ["setuptools>=61.0"]
