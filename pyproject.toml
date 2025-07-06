@@ -1,6 +1,6 @@
 [project]
 name = "pylipextractor"
-version = "1.0.3"
+version = "1.0.4"
 description = "A Python package for robust lip frame extraction from videos using MediaPipe, designed for visual speech recognition tasks."
 readme = "README.md"
 authors = [
@@ -18,7 +18,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
