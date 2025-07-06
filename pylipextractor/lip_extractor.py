@@ -1,4 +1,4 @@
-# pylibextractor_project/pylibextractor/lip_extractor.py
+# pylipextractor/pylipextractor/lip_extractor.py
 
 import os
 import cv2

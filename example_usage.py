@@ -1,4 +1,4 @@
-# pylibextractor_project/example_usage.py
+# pylipextractor/example_usage.py
 
 import sys
 from pathlib import Path

@@ -1,4 +1,5 @@
-# pylibextractor_project/pylibextractor/config.py
+# pylipextractor/pylipextractor/config.py
+
 from pathlib import Path
 
 class LipExtractionConfig:

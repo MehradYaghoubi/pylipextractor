@@ -1,4 +1,4 @@
-# pylibextractor_project/save_npy_frames_to_images.py
+# pylipextractor/save_npy_frames_to_images.py
 
 import sys
 from pathlib import Path
