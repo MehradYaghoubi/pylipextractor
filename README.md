@@ -12,6 +12,10 @@ A Python package for robust lip frame extraction from videos using MediaPipe, de
 * **Debugging Visualizations:** Provides options to save intermediate frames with landmarks and bounding boxes, aiding in visual inspection and troubleshooting of the extraction process.
 * **Efficient Video Handling:** Utilizes PyAV for robust and efficient video decoding.
 
+# Demo
+https://github.com/user-attachments/assets/cfc7ce9d-dfc0-4a8c-9fc1-1a37299437bf
+
+
 ## Installation
 
 You can easily install pylipextractor using pip directly from PyPI. Ensure you have a compatible Python version (3.8 or newer) installed.
