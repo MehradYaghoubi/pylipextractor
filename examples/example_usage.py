@@ -37,24 +37,45 @@ def main():
     print(f"Current default IMG_W: {LipExtractor.config.IMG_W}")
     print(f"Current default SAVE_DEBUG_FRAMES: {LipExtractor.config.SAVE_DEBUG_FRAMES}")
     print(f"Current default APPLY_CLAHE: {LipExtractor.config.APPLY_CLAHE}")
+    # NEW: Show new config options
+    print(f"Current default SMOOTHING_WINDOW_SIZE: {LipExtractor.config.SMOOTHING_WINDOW_SIZE}")
+    print(f"Current default CONVERT_TO_MP4_IF_NEEDED: {LipExtractor.config.CONVERT_TO_MP4_IF_NEEDED}")
+    print(f"Current default MAX_PROBLEMATIC_FRAMES_PERCENTAGE: {LipExtractor.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE}")
+
 
     # Example: Override some default settings for this specific run
     print("\n--- Overriding Default Settings for this run ---")
     LipExtractor.config.SAVE_DEBUG_FRAMES = True # Set to True to save debug images
-    LipExtractor.config.MAX_DEBUG_FRAMES = 75   # Limit debug frames saved
+    LipExtractor.config.MAX_DEBUG_FRAMES = 75    # Limit debug frames saved
     LipExtractor.config.INCLUDE_LANDMARKS_ON_FINAL_OUTPUT = False # Don't draw landmarks on final output
-    LipExtractor.config.APPLY_CLAHE = True      # Apply illumination normalization
-    # LipExtractor.config.IMG_H = 64             # Uncomment to change output height
-    # LipExtractor.config.IMG_W = 128            # Uncomment to change output width
+    LipExtractor.config.APPLY_CLAHE = True       # Apply illumination normalization
+    
+    # NEW: Enable optional MP4 conversion for input videos that are not already MP4
+    # This is highly recommended for MPG files or other problematic formats.
+    LipExtractor.config.CONVERT_TO_MP4_IF_NEEDED = True
+    LipExtractor.config.MP4_TEMP_DIR = Path("./temp_converted_mp4s") # Directory for temporary converted files
+
+    # NEW: Adjust the smoothing window size (e.g., if you have very noisy tracking)
+    # LipExtractor.config.SMOOTHING_WINDOW_SIZE = 7
+
+    # NEW: Adjust the threshold for rejecting a video based on problematic frames
+    # If more than this percentage of frames are black/undecipherable, the entire video will be rejected.
+    LipExtractor.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE = 20.0 # Example: Allow up to 20% problematic frames
+    
+    # LipExtractor.config.IMG_H = 64              # Uncomment to change output height
+    # LipExtractor.config.IMG_W = 128             # Uncomment to change output width
     # LipExtractor.config.LIP_PROPORTIONAL_MARGIN_X = 0.20 # Adjust horizontal margin
     # LipExtractor.config.LIP_PROPORTIONAL_MARGIN_Y = 0.30 # Adjust vertical margin
-    # LipExtractor.config.MAX_BLACK_FRAMES_PERCENTAGE = 15.0
-    # LipExtractor.config.NUM_CPU_CORES = 4s
+    # LipExtractor.config.MAX_FRAMES = 100        # Uncomment to limit the total number of frames processed
 
     print(f"New SAVE_DEBUG_FRAMES setting: {LipExtractor.config.SAVE_DEBUG_FRAMES}")
     print(f"New MAX_DEBUG_FRAMES setting: {LipExtractor.config.MAX_DEBUG_FRAMES}")
     print(f"New INCLUDE_LANDMARKS_ON_FINAL_OUTPUT setting: {LipExtractor.config.INCLUDE_LANDMARKS_ON_FINAL_OUTPUT}")
     print(f"New APPLY_CLAHE setting: {LipExtractor.config.APPLY_CLAHE}")
+    print(f"New CONVERT_TO_MP4_IF_NEEDED setting: {LipExtractor.config.CONVERT_TO_MP4_IF_NEEDED}")
+    print(f"New MP4_TEMP_DIR setting: {LipExtractor.config.MP4_TEMP_DIR}")
+    print(f"New MAX_PROBLEMATIC_FRAMES_PERCENTAGE setting: {LipExtractor.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE}")
+
 
     # Clear previous debug directory if saving debug frames is enabled
     if LipExtractor.config.SAVE_DEBUG_FRAMES and LipExtractor.config.DEBUG_OUTPUT_DIR.exists():
@@ -63,6 +84,15 @@ def main():
             print(f"\nDebug directory '{LipExtractor.config.DEBUG_OUTPUT_DIR}' cleared for a fresh run.", flush=True)
         except OSError as e:
             print(f"Warning: Could not clear debug directory '{LipExtractor.config.DEBUG_OUTPUT_DIR}': {e}", flush=True)
+
+    # NEW: Clear temporary MP4 directory if conversion is enabled
+    if LipExtractor.config.CONVERT_TO_MP4_IF_NEEDED and LipExtractor.config.MP4_TEMP_DIR.exists():
+        try:
+            shutil.rmtree(LipExtractor.config.MP4_TEMP_DIR)
+            print(f"Temporary MP4 conversion directory '{LipExtractor.config.MP4_TEMP_DIR}' cleared for a fresh run.", flush=True)
+        except OSError as e:
+            print(f"Warning: Could not clear temporary MP4 directory '{LipExtractor.config.MP4_TEMP_DIR}': {e}", flush=True)
+
 
     # --- Section 2: LipExtractor Initialization ---
     print_section_header("2. Initializing LipExtractor")
@@ -74,13 +104,13 @@ def main():
     print_section_header("3. Setting Up Input and Output Paths")
 
     # Define the path to the input video.
-    # For this example, place a short video file (e.g., 'bbar8a.mpg')
+    # For this example, place a short video file (e.g., 'bbar8a.mpg' or 'swwz9a.mp4')
     # in the 'examples' directory, next to this script.
-    input_video_path = Path("swwz9a.mp4") # !!! IMPORTANT: CHANGE THIS TO YOUR VIDEO FILE NAME !!!
+    input_video_path = Path("swwz9a.mpg") # !!! IMPORTANT: CHANGE THIS TO YOUR VIDEO FILE NAME (e.g., 'my_mpg_video.mpg') !!!
     
     if not input_video_path.exists():
         print(f"Error: Video file '{input_video_path.name}' not found.", flush=True)
-        print(f"Please place a video file (e.g., 'bbar8a.mpg') in the '{Path(__file__).parent}' directory, or update 'input_video_path'.", flush=True)
+        print(f"Please place a video file (e.g., 'bbar8a.mpg' or 'my_video.mp4') in the '{Path(__file__).parent}' directory, or update 'input_video_path'.", flush=True)
         sys.exit(1)
     
     # Define the path for the output .npy file.
@@ -108,11 +138,15 @@ def main():
         # --- Section 5: Post-Extraction Verification ---
         print_section_header("5. Post-Extraction Verification")
         
-        # Optionally check for potential issues (e.g., entirely black frames)
+        # Check for completely black frames in the final output
+        # (These indicate frames where detection or cropping utterly failed)
         num_black_frames = sum(1 for frame in extracted_frames if np.sum(frame) == 0)
         if num_black_frames > 0:
             print(f"Warning: {num_black_frames} completely black frames found in the output. "
-                  "This might indicate issues during extraction or an invalid input segment.", flush=True)
+                  "This might indicate issues during extraction, or frames where no valid lip region could be generated.", flush=True)
+        else:
+            print("No completely black frames found in the output. This indicates robust extraction for all frames.", flush=True)
+
 
         # Demonstrate loading the .npy file (to confirm it saved correctly)
         print(f"\nAttempting to load the saved .npy file from '{output_npy_path}'...", flush=True)
@@ -141,7 +175,7 @@ def main():
 
     else:
         print("Lip frame extraction failed or the video clip was rejected (e.g., too many invalid frames or no faces detected).", flush=True)
-        print("Please check your input video and consider adjusting LipExtractor.config settings.", flush=True)
+        print("Please check your input video and consider adjusting LipExtractor.config settings, especially 'MAX_PROBLEMATIC_FRAMES_PERCENTAGE' and ensure FFmpeg is installed if 'CONVERT_TO_MP4_IF_NEEDED' is True.", flush=True)
 
     print("\nExample script finished. Thank you for using pylipextractor!", flush=True)
 

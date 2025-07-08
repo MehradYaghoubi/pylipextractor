@@ -47,6 +47,11 @@ class LipExtractionConfig:
     CLAHE_CLIP_LIMIT = 2.0  # Threshold for contrast limiting (recommended: 1.0-4.0)
     CLAHE_TILE_GRID_SIZE = (8, 8) # Size of grid for histogram equalization (e.g., (8,8) or (16,16))
 
+    # --- New FFmpeg Conversion Options ---
+    CONVERT_TO_MP4_IF_NEEDED: bool = False  # Set to True to enable automatic conversion
+    MP4_TEMP_DIR: Path = Path("temp_mp4_conversions") # Directory for temporary MP4 files
+    # --- End New FFmpeg Conversion Options ---
+
     # --- Output Organization Settings (placeholder for future, currently no effect) ---
     DEFAULT_OUTPUT_BASE_DIR = Path("output_data") # Default directory for saving extracted NPYs
     ORGANIZE_OUTPUT_BY_VIDEO_NAME = True # If True, will save NPYs in subfolders based on video name

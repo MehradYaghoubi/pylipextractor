@@ -8,6 +8,7 @@ import av
 from pathlib import Path
 import warnings
 import math
+import subprocess # NEW: For calling FFmpeg
 from typing import Tuple, Optional, List, Union
 
 # --- Suppress specific MediaPipe warnings and GLOG messages ---
@@ -187,6 +188,62 @@ class LipExtractor:
 
         return (x1_smoothed, y1_smoothed, x2_smoothed, y2_smoothed)
 
+    @staticmethod
+    def _convert_video_to_mp4(input_filepath: Path, output_directory: Path) -> Optional[Path]:
+        """
+        Converts a video file to MP4 format using FFmpeg.
+        
+        Args:
+            input_filepath (Path): Path to the input video file.
+            output_directory (Path): Directory where the MP4 output file will be saved.
+                                     This directory will be created if it does not exist.
+                                     
+        Returns:
+            Optional[Path]: Path to the converted MP4 file, or `None` if conversion fails.
+        """
+        output_directory.mkdir(parents=True, exist_ok=True)
+        filename_without_ext = input_filepath.stem
+        output_filepath = output_directory / f"{filename_without_ext}.mp4"
+
+        # FFmpeg command for converting to MP4 with H.264 video and AAC audio
+        # -i: Input file
+        # -c:v libx264: Use H.264 video codec
+        # -preset veryfast: Encoding speed vs. quality tradeoff (veryfast is a good balance)
+        # -crf 23: Constant Rate Factor for video quality (lower is higher quality, 23 is a good default)
+        # -c:a aac: Use AAC audio codec
+        # -b:a 128k: Audio bitrate
+        # -y: Overwrite output file if it exists
+        # -loglevel quiet: Suppress FFmpeg output for cleaner console
+        ffmpeg_command = [
+            'ffmpeg',
+            '-i', str(input_filepath),
+            '-c:v', 'libx264',
+            '-preset', 'veryfast',
+            '-crf', '23',
+            '-c:a', 'aac',
+            '-b:a', '128k',
+            '-y',
+            '-loglevel', 'quiet', # Suppress FFmpeg console output
+            str(output_filepath)
+        ]
+
+        print(f"Attempting to convert '{input_filepath.name}' to MP4...", flush=True)
+        try:
+            subprocess.run(ffmpeg_command, check=True, capture_output=True, text=True)
+            print(f"Conversion successful: '{output_filepath.name}'.", flush=True)
+            return output_filepath
+        except FileNotFoundError:
+            print("FFmpeg not found. Please ensure FFmpeg is installed and added to your system's PATH to use video conversion. Skipping conversion.", flush=True)
+            return None
+        except subprocess.CalledProcessError as e:
+            print(f"Error converting '{input_filepath.name}' with FFmpeg: {e}", flush=True)
+            print("FFmpeg stdout:", e.stdout, flush=True)
+            print("FFmpeg stderr:", e.stderr, flush=True)
+            return None
+        except Exception as e:
+            print(f"An unexpected error occurred during FFmpeg conversion of '{input_filepath.name}': {e}", flush=True)
+            return None
+
     def extract_lip_frames(self, video_path: Union[str, Path], output_npy_path: Optional[Union[str, Path]] = None) -> Optional[np.ndarray]:
         """
         Extracts and processes lip frames from a video.
@@ -204,23 +261,38 @@ class LipExtractor:
                                   Returns `None` if an error occurs during processing or
                                   if the extracted clip is deemed invalid (e.g., too many problematic frames).
         """
-        video_path = Path(video_path) # Convert to Path object for consistent handling
+        original_video_path = Path(video_path) # Keep original path
+        current_video_path = original_video_path # This will be the path used for processing
 
-        if not video_path.exists():
-            print(f"Error: Video file not found at '{video_path}'. Processing stopped.", flush=True)
+        # --- NEW: Optional MP4 Conversion ---
+        converted_temp_mp4_path = None
+        if self.config.CONVERT_TO_MP4_IF_NEEDED and original_video_path.suffix.lower() not in ['.mp4', '.mov']: # Only convert if not already MP4/MOV
+            print(f"'{original_video_path.name}' is not in MP4/MOV format. Attempting conversion...", flush=True)
+            converted_temp_mp4_path = self._convert_video_to_mp4(original_video_path, self.config.MP4_TEMP_DIR)
+            if converted_temp_mp4_path:
+                current_video_path = converted_temp_mp4_path
+            else:
+                print(f"MP4 conversion failed for '{original_video_path.name}'. Attempting to process original file.", flush=True)
+                # Fallback to original path if conversion fails
+                current_video_path = original_video_path 
+        # --- END NEW: Optional MP4 Conversion ---
+
+
+        if not current_video_path.exists():
+            print(f"Error: Video file not found at '{current_video_path}'. Processing stopped.", flush=True)
             return None
 
         processed_frames_temp_list = []
         self.bbox_history = [] # Reset bounding box history for each new video
 
         try:
-            container = av.open(str(video_path))
+            container = av.open(str(current_video_path)) # Use current_video_path here
         except av.AVError as e:
-            print(f"Error opening video '{video_path.name}' with PyAV: {e}. Processing stopped.", flush=True)
+            print(f"Error opening video '{current_video_path.name}' with PyAV: {e}. Processing stopped.", flush=True)
             return None
 
         if not container.streams.video:
-            print(f"Error: No video stream found in '{video_path.name}'. Processing stopped.", flush=True)
+            print(f"Error: No video stream found in '{current_video_path.name}'. Processing stopped.", flush=True)
             container.close()
             return None
             
@@ -241,7 +313,7 @@ class LipExtractor:
                 # Fallback if any error occurs getting frame count
                 total_frames_to_process = float('inf') 
 
-        print(f"Processing video: '{video_path.name}' ({total_frames_to_process if total_frames_to_process != float('inf') else 'all available'} frames)...", flush=True)
+        print(f"Processing video: '{current_video_path.name}' ({total_frames_to_process if total_frames_to_process != float('inf') else 'all available'} frames)...", flush=True)
 
         num_problematic_frames = 0 # Counter for frames where lip detection/cropping fails
 
@@ -328,6 +400,8 @@ class LipExtractor:
                                 final_bbox_width = x2_final - x1_final
                                 final_bbox_height = y2_final - y1_final
 
+                                # No longer checking MIN_VALID_CROP_FACTOR here.
+                                # Any positive dimension indicates a valid raw bounding box.
                                 if final_bbox_width > 0 and final_bbox_height > 0: 
                                     raw_lip_bbox = (x1_final, y1_final, x2_final, y2_final)
                                     frame_is_problematic = False # Frame is valid!
@@ -407,7 +481,7 @@ class LipExtractor:
                             self._debug_frame_processing(black_frame, frame_idx, 'black_generated')
 
                 except Exception as e:
-                    print(f"Warning: Unexpected error processing frame {frame_idx} from '{video_path.name}': {e}. This frame will be treated as problematic.", flush=True)
+                    print(f"Warning: Unexpected error processing frame {frame_idx} from '{current_video_path.name}': {e}. This frame will be treated as problematic.", flush=True)
                     black_frame = np.zeros((self.config.IMG_H, self.config.IMG_W, 3), dtype=np.uint8)
                     processed_frames_temp_list.append(black_frame)
                     num_problematic_frames += 1 # Increment problematic frame counter
@@ -415,10 +489,18 @@ class LipExtractor:
                     self.bbox_history.append((0, 0, self.config.IMG_W, self.config.IMG_H)) 
 
         finally:
-            container.close() 
+            container.close()
+            # --- NEW: Cleanup temporary MP4 file if it was created ---
+            if converted_temp_mp4_path and converted_temp_mp4_path.exists():
+                try:
+                    os.remove(str(converted_temp_mp4_path))
+                    print(f"Cleaned up temporary MP4 file: '{converted_temp_mp4_path.name}'.", flush=True)
+                except Exception as e:
+                    print(f"Warning: Could not remove temporary MP4 file '{converted_temp_mp4_path.name}': {e}", flush=True)
+            # --- END NEW: Cleanup ---
 
         if not processed_frames_temp_list:
-            print(f"Warning: No frames could be processed from video '{video_path.name}'. Returning `None`.", flush=True)
+            print(f"Warning: No frames could be processed from video '{current_video_path.name}'. Returning `None`.", flush=True)
             return None
 
         final_processed_np_frames = np.array(processed_frames_temp_list, dtype=np.uint8)
@@ -440,10 +522,10 @@ class LipExtractor:
         percentage_problematic_frames = (num_problematic_frames / total_output_frames) * 100
 
         if total_output_frames == 0 or percentage_problematic_frames > self.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE: # Renamed config field
-            print(f"Clip '{video_path.name}' rejected: {percentage_problematic_frames:.2f}% problematic frames (exceeds {self.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE}% allowed).", flush=True)
+            print(f"Clip '{original_video_path.name}' rejected: {percentage_problematic_frames:.2f}% problematic frames (exceeds {self.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE}% allowed).", flush=True)
             return None
         elif num_problematic_frames > 0:
-            print(f"Clip '{video_path.name}': {percentage_problematic_frames:.2f}% problematic frames found. Clip retained.", flush=True)
+            print(f"Clip '{original_video_path.name}': {percentage_problematic_frames:.2f}% problematic frames found. Clip retained.", flush=True)
         
         # Save to .npy file if a path is provided
         if output_npy_path:
