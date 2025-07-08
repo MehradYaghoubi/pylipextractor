@@ -6,9 +6,10 @@ A Python package for robust lip frame extraction from videos using MediaPipe, de
 
 * **Accurate Lip Landmark Detection:** Leverages MediaPipe Face Mesh for precise identification of 3D lip contours, ensuring high fidelity in extraction.
 * **Configurable Lip Region Extraction:** Offers fine-grained control over the bounding box around detected lips, allowing for custom proportional margins and padding to capture the desired context.
-* **Temporal Smoothing:** Implements a moving average filter on bounding box coordinates to ensure stable and consistent lip frame extraction across video sequences, minimizing jitter.
+* **Temporal Smoothing:** Implements a moving average filter on bounding box coordinates to ensure stable and consistent lip frame extraction across video sequences. **The smoothing window size is now configurable.**
 * **Illumination Normalization (CLAHE):** Applies Adaptive Histogram Equalization (CLAHE) to enhance contrast and normalize illumination, improving the robustness of extracted frames to varying lighting conditions.
-* **Flexible Output:** Extracts processed lip frames as NumPy arrays (.npy format), making them directly compatible with deep learning model training pipelines.
+* **Optional Video Conversion (FFmpeg):** Can automatically convert various video formats (e.g., MPG) to MP4 internally using FFmpeg, enhancing compatibility and robustness with MediaPipe and PyAV. This can resolve issues with specific problematic video codecs.
+* **Flexible Output & Quality Control:** Extracts processed lip frames as NumPy arrays (.npy format). Includes a configurable threshold (`MAX_PROBLEMATIC_FRAMES_PERCENTAGE`) to automatically reject video clips with too many unprocessable (black) frames, ensuring output data quality.
 * **Debugging Visualizations:** Provides options to save intermediate frames with landmarks and bounding boxes, aiding in visual inspection and troubleshooting of the extraction process.
 * **Efficient Video Handling:** Utilizes PyAV for robust and efficient video decoding.
 
@@ -45,7 +46,8 @@ from pathlib import Path
 from pylipextractor.lip_extractor import LipExtractor
 
 # Set your video path (e.g., ensure 'bbar8a.mpg' is in your current working directory or adjust path)
-input_video_path = Path("bbar8a.mpg")
+# You can use various formats like .mpg, .avi, .mp4, etc.
+input_video_path = Path("your_video.mpg") # !!! IMPORTANT: CHANGE THIS TO YOUR VIDEO FILE NAME !!!
 output_npy_directory = Path("./output_data")
 output_npy_filename = input_video_path.stem + ".npy"
 output_npy_path = output_npy_directory / output_npy_filename
@@ -53,9 +55,22 @@ output_npy_path = output_npy_directory / output_npy_filename
 # --- Configure LipExtractor settings (optional, defaults are from config.py) ---
 # You can override any default setting like this:
 LipExtractor.config.SAVE_DEBUG_FRAMES = True
-LipExtractor.config.MAX_DEBUG_FRAMES = 10 # Save up to 10 debug frames
+LipExtractor.config.MAX_DEBUG_FRAMES = 75 # Limit debug frames saved
 LipExtractor.config.APPLY_CLAHE = True   # Ensure CLAHE is applied for contrast
-# LipExtractor.config.IMG_H = 64         # Example: Change output frame height
+LipExtractor.config.INCLUDE_LANDMARKS_ON_FINAL_OUTPUT = False # Don't draw landmarks on final output
+
+# New: Enable optional MP4 conversion for input videos that are not already MP4.
+# This is highly recommended for problematic formats like some .mpg files.
+LipExtractor.config.CONVERT_TO_MP4_IF_NEEDED = True
+LipExtractor.config.MP4_TEMP_DIR = Path("./temp_converted_mp4s") # Directory for temporary converted files
+
+# New: Adjust the smoothing window size for bounding box stability (default is 5)
+# LipExtractor.config.SMOOTHING_WINDOW_SIZE = 7
+
+# New: Set the maximum percentage of problematic (e.g., black) frames allowed.
+# If a video exceeds this threshold, it will be rejected as invalid.
+LipExtractor.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE = 30.0 # Allow up to 30% problematic frames
+# LipExtractor.config.MAX_FRAMES = 100        # Uncomment to limit the total number of frames processed
 
 # Create an instance of the extractor
 extractor = LipExtractor()
@@ -68,7 +83,8 @@ if extracted_frames is not None:
     print(f"Successfully extracted {extracted_frames.shape[0]} frames.")
     print(f"Frames saved to {output_npy_path}")
 else:
-    print("Extraction failed or no frames were extracted.")
+    print("Extraction failed or the video clip was rejected (e.g., too many invalid frames or no faces detected).")
+
 ```
 
 To convert the extracted .npy file into individual image frames (e.g., PNGs), use the provided save_npy_frames_to_images.py utility script:
@@ -85,6 +101,7 @@ This project heavily relies on the following open-source libraries:
 * **mediapipe:** Utilized for its highly accurate and performant Face Mesh solution, enabling robust facial landmark detection for precise lip localization.
 * **av (PyAV):** Provides efficient and reliable reading and writing of various video file formats.
 * **Pillow:** A fork of the Python Imaging Library (PIL), often used implicitly by other libraries for image file handling.
+* **FFmpeg (External Tool):** Required for the optional automatic video format conversion feature. It must be installed separately on your system and accessible via the system's PATH.
 
 ## Acknowledgements
 I sincerely thank the developers and the vibrant open source community behind all the libraries mentioned in the "Dependencies" section for their valuable work.

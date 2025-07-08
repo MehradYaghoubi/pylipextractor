@@ -1,7 +1,7 @@
 [project]
 name = "pylipextractor"
-version = "1.0.5rc"
-description = "A Python package for robust lip frame extraction from videos using MediaPipe, designed for visual speech recognition tasks."
+version = "1.0.6"
+description = "description = "A Python package for robust lip frame extraction from videos using MediaPipe, featuring enhanced stability, configurable options, and optional video format conversion for VSR tasks.""
 readme = "README.md"
 authors = [
     { name = "Mehrad Yaghoubi", email = "mehradyaghoubi96@gmail.com" },
@@ -13,7 +13,7 @@ dependencies = [
     "mediapipe>=0.10.0",
     "av>=10.0.0",
 ]
-keywords = ["lip-extraction", "visual-speech-recognition", "mediapipe", "video-processing", "lip-reading"]
+keywords = ["lip-extraction", "visual-speech-recognition", "mediapipe", "video-processing", "lip-reading", "ffmpeg", "video-conversion"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
