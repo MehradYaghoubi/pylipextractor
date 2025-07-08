@@ -15,6 +15,7 @@ A Python package for robust lip frame extraction from videos using MediaPipe, de
 # Demo
 https://github.com/user-attachments/assets/cfc7ce9d-dfc0-4a8c-9fc1-1a37299437bf
 
+Orginal video by Tima Miroshnichenko
 
 ## Installation
 
