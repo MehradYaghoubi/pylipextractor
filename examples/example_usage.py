@@ -41,14 +41,15 @@ def main():
     # Example: Override some default settings for this specific run
     print("\n--- Overriding Default Settings for this run ---")
     LipExtractor.config.SAVE_DEBUG_FRAMES = True # Set to True to save debug images
-    LipExtractor.config.MAX_DEBUG_FRAMES = 10   # Limit debug frames saved
+    LipExtractor.config.MAX_DEBUG_FRAMES = 75   # Limit debug frames saved
     LipExtractor.config.INCLUDE_LANDMARKS_ON_FINAL_OUTPUT = False # Don't draw landmarks on final output
     LipExtractor.config.APPLY_CLAHE = True      # Apply illumination normalization
     # LipExtractor.config.IMG_H = 64             # Uncomment to change output height
     # LipExtractor.config.IMG_W = 128            # Uncomment to change output width
     # LipExtractor.config.LIP_PROPORTIONAL_MARGIN_X = 0.20 # Adjust horizontal margin
     # LipExtractor.config.LIP_PROPORTIONAL_MARGIN_Y = 0.30 # Adjust vertical margin
-    # LipExtractor.config.SMOOTHING_WINDOW_SIZE = 7 # Adjust for less jitter (default is 5)
+    # LipExtractor.config.MAX_BLACK_FRAMES_PERCENTAGE = 15.0
+    # LipExtractor.config.NUM_CPU_CORES = 4s
 
     print(f"New SAVE_DEBUG_FRAMES setting: {LipExtractor.config.SAVE_DEBUG_FRAMES}")
     print(f"New MAX_DEBUG_FRAMES setting: {LipExtractor.config.MAX_DEBUG_FRAMES}")
@@ -75,7 +76,7 @@ def main():
     # Define the path to the input video.
     # For this example, place a short video file (e.g., 'bbar8a.mpg')
     # in the 'examples' directory, next to this script.
-    input_video_path = Path("bbar8a.mpg") # !!! IMPORTANT: CHANGE THIS TO YOUR VIDEO FILE NAME !!!
+    input_video_path = Path("swwz9a.mp4") # !!! IMPORTANT: CHANGE THIS TO YOUR VIDEO FILE NAME !!!
     
     if not input_video_path.exists():
         print(f"Error: Video file '{input_video_path.name}' not found.", flush=True)

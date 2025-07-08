@@ -25,8 +25,12 @@ class LipExtractionConfig:
     LIP_PADDING_BOTTOM_PX = 0
 
     # --- General Processing Settings ---
-    NUM_CPU_CORES = 4 # Number of CPU cores for parallel processing (if implemented in batch mode).
-    MAX_BLACK_FRAMES_PERCENTAGE = 15.0 # Max allowed percentage of black frames in the output clip.
+    NUM_CPU_CORES = 5 # Number of CPU cores for parallel processing (if implemented in batch mode).
+    # Renamed: Now represents max allowed percentage of ANY problematic frame (not just black)
+    MAX_PROBLEMATIC_FRAMES_PERCENTAGE = 15.0 
+
+    # New: Smoothing window size for temporal smoothing of bounding boxes
+    SMOOTHING_WINDOW_SIZE = 5 
 
     # --- Debugging & Output Customization Settings ---
     DEBUG_OUTPUT_DIR = Path("./lip_extraction_debug") # Directory to save debug frames
