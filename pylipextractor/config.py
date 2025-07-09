@@ -29,8 +29,10 @@ class LipExtractionConfig:
     # Renamed: Now represents max allowed percentage of ANY problematic frame (not just black)
     MAX_PROBLEMATIC_FRAMES_PERCENTAGE = 15.0 
 
-    # New: Smoothing window size for temporal smoothing of bounding boxes
-    SMOOTHING_WINDOW_SIZE = 5 
+    # Removed: SMOOTHING_WINDOW_SIZE is replaced by EMA_ALPHA for EMA smoothing
+    # New: EMA Smoothing for Bounding Boxes
+    APPLY_EMA_SMOOTHING: bool = True # Set to True to apply EMA smoothing to bounding box coordinates
+    EMA_ALPHA: float = 0.3 # EMA smoothing factor (0.0 to 1.0, higher means less smoothing, 1.0 means no smoothing)
 
     # --- Debugging & Output Customization Settings ---
     DEBUG_OUTPUT_DIR = Path("./lip_extraction_debug") # Directory to save debug frames
@@ -42,7 +44,7 @@ class LipExtractionConfig:
     # This is for visualization/debugging of the final output, not typically for model training.
     INCLUDE_LANDMARKS_ON_FINAL_OUTPUT = False
 
-    # --- New: Illumination and Contrast Normalization Settings (CLAHE) ---
+    # --- Illumination and Contrast Normalization Settings (CLAHE) ---
     APPLY_CLAHE = True  # Set to True to apply CLAHE for illumination/contrast normalization
     CLAHE_CLIP_LIMIT = 2.0  # Threshold for contrast limiting (recommended: 1.0-4.0)
     CLAHE_TILE_GRID_SIZE = (8, 8) # Size of grid for histogram equalization (e.g., (8,8) or (16,16))

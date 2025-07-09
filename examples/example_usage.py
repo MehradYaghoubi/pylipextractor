@@ -11,7 +11,7 @@ import logging # Import the logging module
 # In a larger application, this might be done in a separate utility or entry point.
 # Set level to INFO to see general progress, or DEBUG to see more detailed internal messages.
 # INFO, WARNING, ERROR, CRITICAL
-logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 # Get a logger for this specific module
 logger = logging.getLogger(__name__)
 
@@ -48,8 +48,11 @@ def main():
     logger.info(f"Current default IMG_W: {LipExtractor.config.IMG_W}")
     logger.info(f"Current default SAVE_DEBUG_FRAMES: {LipExtractor.config.SAVE_DEBUG_FRAMES}")
     logger.info(f"Current default APPLY_CLAHE: {LipExtractor.config.APPLY_CLAHE}")
-    # NEW: Show new config options
-    logger.info(f"Current default SMOOTHING_WINDOW_SIZE: {LipExtractor.config.SMOOTHING_WINDOW_SIZE}")
+    
+    # NEW: Show new config options for EMA
+    logger.info(f"Current default APPLY_EMA_SMOOTHING: {LipExtractor.config.APPLY_EMA_SMOOTHING}")
+    logger.info(f"Current default EMA_ALPHA: {LipExtractor.config.EMA_ALPHA}")
+
     logger.info(f"Current default CONVERT_TO_MP4_IF_NEEDED: {LipExtractor.config.CONVERT_TO_MP4_IF_NEEDED}")
     logger.info(f"Current default MAX_PROBLEMATIC_FRAMES_PERCENTAGE: {LipExtractor.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE}")
 
@@ -61,13 +64,14 @@ def main():
     LipExtractor.config.INCLUDE_LANDMARKS_ON_FINAL_OUTPUT = True # Don't draw landmarks on final output
     LipExtractor.config.APPLY_CLAHE = True       # Apply illumination normalization
     
+    # NEW: Configure EMA Smoothing
+    LipExtractor.config.APPLY_EMA_SMOOTHING = True # Enable EMA smoothing
+    LipExtractor.config.EMA_ALPHA = 0.4          # Set EMA smoothing factor (e.g., 0.2 for more smoothing)
+
     # NEW: Enable optional MP4 conversion for input videos that are not already MP4
     # This is highly recommended for MPG files or other problematic formats.
     LipExtractor.config.CONVERT_TO_MP4_IF_NEEDED = True
     LipExtractor.config.MP4_TEMP_DIR = Path("./temp_converted_mp4s") # Directory for temporary converted files
-
-    # NEW: Adjust the smoothing window size (e.g., if you have very noisy tracking)
-    # LipExtractor.config.SMOOTHING_WINDOW_SIZE = 7
 
     # NEW: Adjust the threshold for rejecting a video based on problematic frames
     # If more than this percentage of frames are black/undecipherable, the entire video will be rejected.
@@ -83,6 +87,11 @@ def main():
     logger.info(f"New MAX_DEBUG_FRAMES setting: {LipExtractor.config.MAX_DEBUG_FRAMES}")
     logger.info(f"New INCLUDE_LANDMARKS_ON_FINAL_OUTPUT setting: {LipExtractor.config.INCLUDE_LANDMARKS_ON_FINAL_OUTPUT}")
     logger.info(f"New APPLY_CLAHE setting: {LipExtractor.config.APPLY_CLAHE}")
+    
+    # NEW: Log new EMA settings
+    logger.info(f"New APPLY_EMA_SMOOTHING setting: {LipExtractor.config.APPLY_EMA_SMOOTHING}")
+    logger.info(f"New EMA_ALPHA setting: {LipExtractor.config.EMA_ALPHA}")
+
     logger.info(f"New CONVERT_TO_MP4_IF_NEEDED setting: {LipExtractor.config.CONVERT_TO_MP4_IF_NEEDED}")
     logger.info(f"New MP4_TEMP_DIR setting: {LipExtractor.config.MP4_TEMP_DIR}")
     logger.info(f"New MAX_PROBLEMATIC_FRAMES_PERCENTAGE setting: {LipExtractor.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE}")
@@ -154,7 +163,7 @@ def main():
         num_black_frames = sum(1 for frame in extracted_frames if np.sum(frame) == 0)
         if num_black_frames > 0:
             logger.warning(f"{num_black_frames} completely black frames found in the output. "
-                         "This might indicate issues during extraction, or frames where no valid lip region could be generated.")
+                          "This might indicate issues during extraction, or frames where no valid lip region could be generated.")
         else:
             logger.info("No completely black frames found in the output. This indicates robust extraction for all frames.")
 
