@@ -1,12 +1,12 @@
 # PyLipExtractor
 
-A Python package for robust lip frame extraction from videos using MediaPipe, designed specifically for visual speech recognition (VSR) and lip-reading tasks. It provides a streamlined, configurable process to convert raw video into ready-to-use lip sequences, ideal for deep learning model training.
+An advanced, customizable lip extraction tool using MediaPipe Face Mesh for precise and stable lip region cropping from videos.
 
 ## Features
 
 * **Accurate Lip Landmark Detection:** Leverages MediaPipe Face Mesh for precise identification of 3D lip contours, ensuring high fidelity in extraction.
 * **Configurable Lip Region Extraction:** Offers fine-grained control over the bounding box around detected lips, allowing for custom proportional margins and padding to capture the desired context.
-* **Temporal Smoothing:** Implements a moving average filter on bounding box coordinates to ensure stable and consistent lip frame extraction across video sequences. **The smoothing window size is now configurable.**
+* **Temporal Smoothing:** Implements a moving average filter on bounding box coordinates to ensure stable and consistent lip frame extraction across video sequences.
 * **Illumination Normalization (CLAHE):** Applies Adaptive Histogram Equalization (CLAHE) to enhance contrast and normalize illumination, improving the robustness of extracted frames to varying lighting conditions.
 * **Optional Video Conversion (FFmpeg):** Can automatically convert various video formats (e.g., MPG) to MP4 internally using FFmpeg, enhancing compatibility and robustness with MediaPipe and PyAV. This can resolve issues with specific problematic video codecs.
 * **Flexible Output & Quality Control:** Extracts processed lip frames as NumPy arrays (.npy format). Includes a configurable threshold (`MAX_PROBLEMATIC_FRAMES_PERCENTAGE`) to automatically reject video clips with too many unprocessable (black) frames, ensuring output data quality.
@@ -14,7 +14,9 @@ A Python package for robust lip frame extraction from videos using MediaPipe, de
 * **Efficient Video Handling:** Utilizes PyAV for robust and efficient video decoding.
 
 # Demo
-https://github.com/user-attachments/assets/cfc7ce9d-dfc0-4a8c-9fc1-1a37299437bf
+https://github.com/user-attachments/assets/a6841309-3e4d-4b7e-bd0f-b56a5cab28e4
+
+
 
 Original video by Tima Miroshnichenko
 
@@ -64,13 +66,14 @@ LipExtractor.config.INCLUDE_LANDMARKS_ON_FINAL_OUTPUT = False # Don't draw landm
 LipExtractor.config.CONVERT_TO_MP4_IF_NEEDED = True
 LipExtractor.config.MP4_TEMP_DIR = Path("./temp_converted_mp4s") # Directory for temporary converted files
 
-# New: Adjust the smoothing window size for bounding box stability (default is 5)
-# LipExtractor.config.SMOOTHING_WINDOW_SIZE = 7
+# New: Adjust the Exponential Moving Average (EMA) alpha for bounding box smoothing (default is 0.1)
+# A smaller EMA_ALPHA means more smoothing.
+LipExtractor.config.EMA_ALPHA = 0.05 # Example: more smoothing than default
 
 # New: Set the maximum percentage of problematic (e.g., black) frames allowed.
 # If a video exceeds this threshold, it will be rejected as invalid.
 LipExtractor.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE = 30.0 # Allow up to 30% problematic frames
-# LipExtractor.config.MAX_FRAMES = 100        # Uncomment to limit the total number of frames processed
+# LipExtractor.config.MAX_FRAMES = 100         # Uncomment to limit the total number of frames processed
 
 # Create an instance of the extractor
 extractor = LipExtractor()
