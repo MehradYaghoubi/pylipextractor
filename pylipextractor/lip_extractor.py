@@ -8,26 +8,29 @@ import av
 from pathlib import Path
 import warnings
 import math
-import subprocess # NEW: For calling FFmpeg
+import subprocess
 from typing import Tuple, Optional, List, Union
+import logging # NEW: Import the logging module
+
+# --- Setup for logging ---
+# It's crucial to set up a NullHandler for libraries to prevent "No handlers could be found for logger" messages
+# if the main application doesn't configure logging. The user's application will then configure it as desired.
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
+# --- End logging setup ---
 
 # --- Suppress specific MediaPipe warnings and GLOG messages ---
 warnings.filterwarnings("ignore", category=UserWarning, module="mediapipe")
 os.environ['GLOG_minloglevel'] = '2' # Suppress all GLOG messages below WARNING level.
 # --- End suppression ---
 
-# IMPORTANT: UPDATED AND CORRECTED LIPS_MESH_LANDMARKS_INDICES
-# This list is derived from direct visual inspection of the MediaPipe Face Mesh,
-# focusing EXCLUSIVELY on the outer (vermilion) and inner lip contours.
+# Access the pre-defined lip connections from MediaPipe
+# FACEMESH_LIPS is a frozenset of tuples, where each tuple represents a connection (start_idx, end_idx)
+_LIP_CONNECTIONS = mp.solutions.face_mesh.FACEMESH_LIPS
+
+# Extract all unique landmark indices involved in these connections
 LIPS_MESH_LANDMARKS_INDICES = sorted(list(set([
-    # Outer Lip (Vermilion Border)
-    61, 185, 40, 39, 37, 0, 267, 269, 270, 409, # Upper
-    291, 375, 321, 314, 405, 304, 303, 302, 292, 306, # Lower
-    # Inner Lip (Mouth Opening)
-    78, 191, 80, 81, 82, 13, 312, 311, 310, 415, # Upper
-    87, 178, 88, 95, 181, 85, 182, 16, 91, 14, 317, 402, 320, 318, 324, 308, # Lower & Sides
-    # Mouth Corners (Crucial for definition)
-    17, 267
+    idx for connection in _LIP_CONNECTIONS for idx in connection
 ])))
 
 # Import MainConfig here so LipExtractor can manage it as a class-level attribute
@@ -84,7 +87,7 @@ class LipExtractor:
                 min_tracking_confidence=0.5,
                 refine_landmarks=True # Use refined landmarks for better accuracy
             )
-            # print(f"MediaPipe Face Mesh model loaded for process {os.getpid()}.", flush=True) # Uncomment for debug
+            logger.debug(f"MediaPipe Face Mesh model loaded for process {os.getpid()}.") # Changed to debug
 
     @staticmethod
     def _is_black_frame(frame_np: np.ndarray) -> bool:
@@ -206,14 +209,6 @@ class LipExtractor:
         output_filepath = output_directory / f"{filename_without_ext}.mp4"
 
         # FFmpeg command for converting to MP4 with H.264 video and AAC audio
-        # -i: Input file
-        # -c:v libx264: Use H.264 video codec
-        # -preset veryfast: Encoding speed vs. quality tradeoff (veryfast is a good balance)
-        # -crf 23: Constant Rate Factor for video quality (lower is higher quality, 23 is a good default)
-        # -c:a aac: Use AAC audio codec
-        # -b:a 128k: Audio bitrate
-        # -y: Overwrite output file if it exists
-        # -loglevel quiet: Suppress FFmpeg output for cleaner console
         ffmpeg_command = [
             'ffmpeg',
             '-i', str(input_filepath),
@@ -227,21 +222,21 @@ class LipExtractor:
             str(output_filepath)
         ]
 
-        print(f"Attempting to convert '{input_filepath.name}' to MP4...", flush=True)
+        logger.info(f"Attempting to convert '{input_filepath.name}' to MP4...") # Changed to info
         try:
             subprocess.run(ffmpeg_command, check=True, capture_output=True, text=True)
-            print(f"Conversion successful: '{output_filepath.name}'.", flush=True)
+            logger.info(f"Conversion successful: '{output_filepath.name}'.") # Changed to info
             return output_filepath
         except FileNotFoundError:
-            print("FFmpeg not found. Please ensure FFmpeg is installed and added to your system's PATH to use video conversion. Skipping conversion.", flush=True)
+            logger.error("FFmpeg not found. Please ensure FFmpeg is installed and added to your system's PATH to use video conversion. Skipping conversion.") # Changed to error
             return None
         except subprocess.CalledProcessError as e:
-            print(f"Error converting '{input_filepath.name}' with FFmpeg: {e}", flush=True)
-            print("FFmpeg stdout:", e.stdout, flush=True)
-            print("FFmpeg stderr:", e.stderr, flush=True)
+            logger.error(f"Error converting '{input_filepath.name}' with FFmpeg: {e}") # Changed to error
+            logger.error(f"FFmpeg stdout: {e.stdout}") # Changed to error
+            logger.error(f"FFmpeg stderr: {e.stderr}") # Changed to error
             return None
         except Exception as e:
-            print(f"An unexpected error occurred during FFmpeg conversion of '{input_filepath.name}': {e}", flush=True)
+            logger.error(f"An unexpected error occurred during FFmpeg conversion of '{input_filepath.name}': {e}") # Changed to error
             return None
 
     def extract_lip_frames(self, video_path: Union[str, Path], output_npy_path: Optional[Union[str, Path]] = None) -> Optional[np.ndarray]:
@@ -267,19 +262,19 @@ class LipExtractor:
         # --- NEW: Optional MP4 Conversion ---
         converted_temp_mp4_path = None
         if self.config.CONVERT_TO_MP4_IF_NEEDED and original_video_path.suffix.lower() not in ['.mp4', '.mov']: # Only convert if not already MP4/MOV
-            print(f"'{original_video_path.name}' is not in MP4/MOV format. Attempting conversion...", flush=True)
+            logger.info(f"'{original_video_path.name}' is not in MP4/MOV format. Attempting conversion...") # Changed to info
             converted_temp_mp4_path = self._convert_video_to_mp4(original_video_path, self.config.MP4_TEMP_DIR)
             if converted_temp_mp4_path:
                 current_video_path = converted_temp_mp4_path
             else:
-                print(f"MP4 conversion failed for '{original_video_path.name}'. Attempting to process original file.", flush=True)
+                logger.warning(f"MP4 conversion failed for '{original_video_path.name}'. Attempting to process original file.") # Changed to warning
                 # Fallback to original path if conversion fails
                 current_video_path = original_video_path 
         # --- END NEW: Optional MP4 Conversion ---
 
 
         if not current_video_path.exists():
-            print(f"Error: Video file not found at '{current_video_path}'. Processing stopped.", flush=True)
+            logger.error(f"Video file not found at '{current_video_path}'. Processing stopped.") # Changed to error
             return None
 
         processed_frames_temp_list = []
@@ -288,11 +283,11 @@ class LipExtractor:
         try:
             container = av.open(str(current_video_path)) # Use current_video_path here
         except av.AVError as e:
-            print(f"Error opening video '{current_video_path.name}' with PyAV: {e}. Processing stopped.", flush=True)
+            logger.error(f"Error opening video '{current_video_path.name}' with PyAV: {e}. Processing stopped.") # Changed to error
             return None
 
         if not container.streams.video:
-            print(f"Error: No video stream found in '{current_video_path.name}'. Processing stopped.", flush=True)
+            logger.error(f"No video stream found in '{current_video_path.name}'. Processing stopped.") # Changed to error
             container.close()
             return None
             
@@ -313,7 +308,7 @@ class LipExtractor:
                 # Fallback if any error occurs getting frame count
                 total_frames_to_process = float('inf') 
 
-        print(f"Processing video: '{current_video_path.name}' ({total_frames_to_process if total_frames_to_process != float('inf') else 'all available'} frames)...", flush=True)
+        logger.info(f"Processing video: '{current_video_path.name}' ({total_frames_to_process if total_frames_to_process != float('inf') else 'all available'} frames)...") # Changed to info
 
         num_problematic_frames = 0 # Counter for frames where lip detection/cropping fails
 
@@ -321,6 +316,7 @@ class LipExtractor:
             for frame_idx, frame_av in enumerate(container.decode(video=0)):
                 # Stop if max frames limit is reached
                 if total_frames_to_process != float('inf') and frame_idx >= total_frames_to_process:
+                    logger.debug(f"Max frames limit ({total_frames_to_process}) reached. Stopping video processing.") # Changed to debug
                     break 
 
                 try:
@@ -405,6 +401,14 @@ class LipExtractor:
                                 if final_bbox_width > 0 and final_bbox_height > 0: 
                                     raw_lip_bbox = (x1_final, y1_final, x2_final, y2_final)
                                     frame_is_problematic = False # Frame is valid!
+                                else:
+                                    logger.warning(f"Frame {frame_idx}: Calculated final bounding box has zero or negative dimensions after aspect ratio adjustment. Generating black frame.") # Changed to warning
+                            else:
+                                logger.warning(f"Frame {frame_idx}: Clamped bounding box has zero or negative dimensions. Generating black frame.") # Changed to warning
+                        else:
+                            logger.warning(f"Frame {frame_idx}: No lip coordinates found. Generating black frame.") # Changed to warning
+                    else:
+                        logger.warning(f"Frame {frame_idx}: No face detected. Generating black frame.") # Changed to warning
 
                     # Apply temporal smoothing to the raw bounding box (or its absence)
                     smoothed_lip_bbox = self._apply_temporal_smoothing(raw_lip_bbox)
@@ -481,7 +485,7 @@ class LipExtractor:
                             self._debug_frame_processing(black_frame, frame_idx, 'black_generated')
 
                 except Exception as e:
-                    print(f"Warning: Unexpected error processing frame {frame_idx} from '{current_video_path.name}': {e}. This frame will be treated as problematic.", flush=True)
+                    logger.warning(f"Unexpected error processing frame {frame_idx} from '{current_video_path.name}': {e}. This frame will be treated as problematic.") # Changed to warning
                     black_frame = np.zeros((self.config.IMG_H, self.config.IMG_W, 3), dtype=np.uint8)
                     processed_frames_temp_list.append(black_frame)
                     num_problematic_frames += 1 # Increment problematic frame counter
@@ -494,13 +498,13 @@ class LipExtractor:
             if converted_temp_mp4_path and converted_temp_mp4_path.exists():
                 try:
                     os.remove(str(converted_temp_mp4_path))
-                    print(f"Cleaned up temporary MP4 file: '{converted_temp_mp4_path.name}'.", flush=True)
+                    logger.info(f"Cleaned up temporary MP4 file: '{converted_temp_mp4_path.name}'.") # Changed to info
                 except Exception as e:
-                    print(f"Warning: Could not remove temporary MP4 file '{converted_temp_mp4_path.name}': {e}", flush=True)
+                    logger.warning(f"Could not remove temporary MP4 file '{converted_temp_mp4_path.name}': {e}") # Changed to warning
             # --- END NEW: Cleanup ---
 
         if not processed_frames_temp_list:
-            print(f"Warning: No frames could be processed from video '{current_video_path.name}'. Returning `None`.", flush=True)
+            logger.warning(f"No frames could be processed from video '{current_video_path.name}'. Returning `None`.") # Changed to warning
             return None
 
         final_processed_np_frames = np.array(processed_frames_temp_list, dtype=np.uint8)
@@ -508,12 +512,14 @@ class LipExtractor:
         # Apply MAX_FRAMES limit if specified
         if self.config.MAX_FRAMES is not None and final_processed_np_frames.shape[0] > self.config.MAX_FRAMES:
             final_processed_np_frames = final_processed_np_frames[:self.config.MAX_FRAMES]
+            logger.info(f"Video truncated to {self.config.MAX_FRAMES} frames as per configuration.") # Changed to info
         elif self.config.MAX_FRAMES is not None and final_processed_np_frames.shape[0] < self.config.MAX_FRAMES:
             padding_needed = self.config.MAX_FRAMES - final_processed_np_frames.shape[0]
             black_padding = np.zeros((padding_needed, self.config.IMG_H, self.config.IMG_W, 3), dtype=np.uint8)
             final_processed_np_frames = np.concatenate((final_processed_np_frames, black_padding), axis=0)
             # Count these new black frames as problematic if the original video was shorter
             num_problematic_frames += padding_needed
+            logger.info(f"Video padded with {padding_needed} black frames to reach {self.config.MAX_FRAMES} frames as per configuration.") # Changed to info
 
 
         total_output_frames = final_processed_np_frames.shape[0]
@@ -522,17 +528,17 @@ class LipExtractor:
         percentage_problematic_frames = (num_problematic_frames / total_output_frames) * 100
 
         if total_output_frames == 0 or percentage_problematic_frames > self.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE: # Renamed config field
-            print(f"Clip '{original_video_path.name}' rejected: {percentage_problematic_frames:.2f}% problematic frames (exceeds {self.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE}% allowed).", flush=True)
+            logger.warning(f"Clip '{original_video_path.name}' rejected: {percentage_problematic_frames:.2f}% problematic frames (exceeds {self.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE}% allowed).") # Changed to warning
             return None
         elif num_problematic_frames > 0:
-            print(f"Clip '{original_video_path.name}': {percentage_problematic_frames:.2f}% problematic frames found. Clip retained.", flush=True)
+            logger.info(f"Clip '{original_video_path.name}': {percentage_problematic_frames:.2f}% problematic frames found. Clip retained.") # Changed to info
         
         # Save to .npy file if a path is provided
         if output_npy_path:
             output_npy_path = Path(output_npy_path)
             output_npy_path.parent.mkdir(parents=True, exist_ok=True) 
             np.save(output_npy_path, final_processed_np_frames)
-            print(f"Extracted frames saved to '{output_npy_path}'.", flush=True)
+            logger.info(f"Extracted frames saved to '{output_npy_path}'.") # Changed to info
 
         return final_processed_np_frames
 
@@ -549,13 +555,13 @@ class LipExtractor:
         """
         npy_path = Path(npy_path)
         if not npy_path.exists():
-            print(f"Error: NPY file not found at '{npy_path}'.", flush=True)
+            logger.error(f"NPY file not found at '{npy_path}'.") # Changed to error
             return None
         
         try:
             data = np.load(npy_path)
-            print(f"Successfully loaded NPY file from '{npy_path}'. Shape: {data.shape}", flush=True)
+            logger.info(f"Successfully loaded NPY file from '{npy_path}'. Shape: {data.shape}") # Changed to info
             return data
         except Exception as e:
-            print(f"Error loading NPY file '{npy_path}': {e}", flush=True)
+            logger.error(f"Error loading NPY file '{npy_path}': {e}") # Changed to error
             return None
