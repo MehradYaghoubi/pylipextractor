@@ -135,7 +135,6 @@ class LipExtractor:
                 cv2.circle(display_frame, (x, y), 1, color, -1) 
 
             # Draw the calculated bounding box for the lip
-            # FIX: Check if current_lip_bbox_val is not None before trying to use it as a boolean.
             if current_lip_bbox_val is not None and len(current_lip_bbox_val) == 4: # Ensure it's a valid bbox (tuple or list)
                 # Convert to int if it's a numpy array to avoid potential float issues with cv2.rectangle
                 x1, y1, x2, y2 = [int(val) for val in current_lip_bbox_val]
@@ -339,64 +338,78 @@ class LipExtractor:
                                 lip_x_coords.append(landmarks[idx].x * original_frame_width)
                                 lip_y_coords.append(landmarks[idx].y * original_frame_height)
 
-                        if lip_x_coords and lip_y_coords: # This is fine as lists are evaluated correctly
-                            min_x_tight = min(lip_x_coords)
-                            max_x_tight = max(lip_x_coords)
-                            min_y_tight = min(lip_y_coords)
-                            max_y_tight = max(lip_y_coords)
-                            
-                            current_lip_width_tight = max_x_tight - min_x_tight
-                            current_lip_height_tight = max_y_tight - min_y_tight
+                        if lip_x_coords and lip_y_coords: 
+                            # Calculate tight bounding box around actual lip landmarks
+                            min_x_tight = np.min(lip_x_coords)
+                            max_x_tight = np.max(lip_x_coords)
+                            min_y_tight = np.min(lip_y_coords)
+                            max_y_tight = np.max(lip_y_coords)
 
-                            margin_x = current_lip_width_tight * self.config.LIP_PROPORTIONAL_MARGIN_X
-                            margin_y = current_lip_height_tight * self.config.LIP_PROPORTIONAL_MARGIN_Y
+                            # Calculate the centroid of the tight lip region
+                            lip_centroid_x = (min_x_tight + max_x_tight) / 2
+                            lip_centroid_y = (min_y_tight + max_y_tight) / 2
 
-                            x1_proposed = min_x_tight - margin_x - self.config.LIP_PADDING_LEFT_PX
-                            y1_proposed = min_y_tight - margin_y - self.config.LIP_PADDING_TOP_PX
-                            x2_proposed = max_x_tight + margin_x + self.config.LIP_PADDING_RIGHT_PX
-                            y2_proposed = max_y_tight + margin_y + self.config.LIP_PADDING_BOTTOM_PX
+                            # Calculate desired bounding box dimensions based on proportional margins and fixed padding
+                            initial_tight_width = max_x_tight - min_x_tight
+                            initial_tight_height = max_y_tight - min_y_tight
 
-                            x1_clamped = max(0, int(x1_proposed))
-                            y1_clamped = max(0, int(y1_proposed))
-                            x2_clamped = min(original_frame_width, int(x2_proposed))
-                            y2_clamped = min(original_frame_height, int(y2_proposed))
+                            # Determine the target size of the bounding box including margins and padding
+                            target_bbox_width = initial_tight_width * (1 + 2 * self.config.LIP_PROPORTIONAL_MARGIN_X) + \
+                                                self.config.LIP_PADDING_LEFT_PX + self.config.LIP_PADDING_RIGHT_PX
+                            target_bbox_height = initial_tight_height * (1 + 2 * self.config.LIP_PROPORTIONAL_MARGIN_Y) + \
+                                                 self.config.LIP_PADDING_TOP_PX + self.config.LIP_PADDING_BOTTOM_PX
 
-                            current_width_clamped = x2_clamped - x1_clamped
-                            current_height_clamped = y2_clamped - y1_clamped
+                            # Adjust target_bbox_width/height to maintain the target aspect ratio (IMG_W / IMG_H)
+                            # This ensures the cropped region has the correct aspect ratio *before* resizing to IMG_W x IMG_H
+                            target_aspect_ratio = self.config.IMG_W / self.config.IMG_H
 
-                            if current_width_clamped > 0 and current_height_clamped > 0:
-                                target_aspect_ratio = self.config.IMG_W / self.config.IMG_H 
-                                
-                                center_x = (x1_clamped + x2_clamped) / 2
-                                center_y = (y1_clamped + y2_clamped) / 2
+                            current_bbox_aspect_ratio = target_bbox_width / target_bbox_height
 
-                                if (current_width_clamped / current_height_clamped) > target_aspect_ratio:
-                                    needed_height = current_width_clamped / target_aspect_ratio
-                                    y1_adjusted = center_y - needed_height / 2
-                                    y2_adjusted = center_y + needed_height / 2
-
-                                    y1_final = max(0, int(y1_adjusted))
-                                    y2_final = min(original_frame_height, int(y2_adjusted))
-                                    x1_final, x2_final = x1_clamped, x2_clamped
-                                else:
-                                    needed_width = current_height_clamped * target_aspect_ratio
-                                    x1_adjusted = center_x - needed_width / 2
-                                    x2_adjusted = center_x + needed_width / 2
-
-                                    x1_final = max(0, int(x1_adjusted))
-                                    x2_final = min(original_frame_width, int(x2_adjusted))
-                                    y1_final, y2_final = y1_clamped, y2_clamped
-
-                                final_bbox_width = x2_final - x1_final
-                                final_bbox_height = y2_final - y1_final
-
-                                if final_bbox_width > 0 and final_bbox_height > 0: 
-                                    raw_lip_bbox = np.array([x1_final, y1_final, x2_final, y2_final], dtype=np.int32)
-                                    frame_is_problematic = False # Frame is valid!
-                                else:
-                                    logger.warning(f"Frame {frame_idx}: Calculated final bounding box has zero or negative dimensions after aspect ratio adjustment. Generating black frame.") 
+                            if current_bbox_aspect_ratio > target_aspect_ratio:
+                                # Bounding box is wider than target aspect ratio, increase height
+                                target_bbox_height = target_bbox_width / target_aspect_ratio
                             else:
-                                logger.warning(f"Frame {frame_idx}: Clamped bounding box has zero or negative dimensions. Generating black frame.") 
+                                # Bounding box is taller or equal, increase width
+                                target_bbox_width = target_bbox_height * target_aspect_ratio
+
+                            # Calculate proposed bounding box coordinates centered around the lip centroid
+                            x1_proposed = lip_centroid_x - target_bbox_width / 2
+                            y1_proposed = lip_centroid_y - target_bbox_height / 2
+                            x2_proposed = lip_centroid_x + target_bbox_width / 2
+                            y2_proposed = lip_centroid_y + target_bbox_height / 2
+
+                            # Clamp coordinates to frame boundaries and adjust to maintain size if possible
+                            x1_final = int(x1_proposed)
+                            y1_final = int(y1_proposed)
+                            x2_final = int(x2_proposed)
+                            y2_final = int(y2_proposed)
+
+                            # Shift box if it goes out of bounds
+                            if x1_final < 0:
+                                x2_final += abs(x1_final)
+                                x1_final = 0
+                            if y1_final < 0:
+                                y2_final += abs(y1_final)
+                                y1_final = 0
+                            if x2_final > original_frame_width:
+                                x1_final -= (x2_final - original_frame_width)
+                                x2_final = original_frame_width
+                            if y2_final > original_frame_height:
+                                y1_final -= (y2_final - original_frame_height)
+                                y2_final = original_frame_height
+
+                            # Final clamping (important after shifts to ensure values are within limits)
+                            x1_final = max(0, min(original_frame_width, x1_final))
+                            y1_final = max(0, min(original_frame_height, y1_final))
+                            x2_final = max(0, min(original_frame_width, x2_final))
+                            y2_final = max(0, min(original_frame_height, y2_final))
+
+                            # Ensure the final box has positive dimensions
+                            if (x2_final - x1_final) > 0 and (y2_final - y1_final) > 0:
+                                raw_lip_bbox = np.array([x1_final, y1_final, x2_final, y2_final], dtype=np.int32)
+                                frame_is_problematic = False
+                            else:
+                                logger.warning(f"Frame {frame_idx}: Calculated final bounding box has zero or negative dimensions after centering/adjustment. Generating black frame.") 
                         else:
                             logger.warning(f"Frame {frame_idx}: No lip coordinates found. Generating black frame.") 
                     else:
@@ -442,23 +455,80 @@ class LipExtractor:
                         final_resized_lip = cv2.resize(lip_cropped_frame, (self.config.IMG_W, self.config.IMG_H), interpolation=interpolation_method)
                         
                         processed_lip_frame = final_resized_lip.copy() 
-                        if self.config.APPLY_CLAHE and self.clahe_obj is not None:
-                            # CLAHE on RGB requires conversion to a luminosity channel (like Y in YCrCb or L in LAB)
-                            # Convert RGB to YCrCb
-                            ycrcb_image = cv2.cvtColor(processed_lip_frame, cv2.COLOR_RGB2YCrCb)
-                            y_channel, cr_channel, cb_channel = cv2.split(ycrcb_image)
-                            
-                            # Apply CLAHE to the Y (luminosity) channel
-                            clahe_y_channel = self.clahe_obj.apply(y_channel)
-                            
-                            # Merge the CLAHE enhanced Y-channel with original Cr and Cb channels
-                            merged_ycrcb = cv2.merge([clahe_y_channel, cr_channel, cb_channel])
-                            
-                            # Convert back to RGB
-                            processed_lip_frame = cv2.cvtColor(merged_ycrcb, cv2.COLOR_YCrCb2RGB)
+                        
+                        # --- Apply CLAHE only to the masked lip region within the cropped and resized frame ---
+                        # This ensures CLAHE enhances only the lip pixels, not the surrounding area of the bounding box.
+                        if self.config.APPLY_CLAHE and self.clahe_obj is not None and mp_face_landmarks is not None and smoothed_lip_bbox_np is not None:
+                            mask = np.zeros(processed_lip_frame.shape[:2], dtype=np.uint8) # Grayscale mask
 
-                            if self.config.SAVE_DEBUG_FRAMES:
-                                self._debug_frame_processing(processed_lip_frame, frame_idx, 'clahe_applied')
+                            x_offset_for_mapping = smoothed_lip_bbox_np[0] 
+                            y_offset_for_mapping = smoothed_lip_bbox_np[1]
+                            
+                            width_cropped_for_mapping = smoothed_lip_bbox_np[2] - smoothed_lip_bbox_np[0]
+                            height_cropped_for_mapping = smoothed_lip_bbox_np[3] - smoothed_lip_bbox_np[1]
+
+                            if width_cropped_for_mapping > 0 and height_cropped_for_mapping > 0:
+                                scale_x_to_output = self.config.IMG_W / width_cropped_for_mapping
+                                scale_y_to_output = self.config.IMG_H / height_cropped_for_mapping
+
+                                lip_points = []
+                                for lm_idx in LIPS_MESH_LANDMARKS_INDICES:
+                                    if lm_idx < len(mp_face_landmarks.landmark):
+                                        orig_x_px = mp_face_landmarks.landmark[lm_idx].x * original_frame_width
+                                        orig_y_px = mp_face_landmarks.landmark[lm_idx].y * original_frame_height
+                                        
+                                        relative_x_px = orig_x_px - x_offset_for_mapping
+                                        relative_y_px = orig_y_px - y_offset_for_mapping
+
+                                        final_x_lm = int(relative_x_px * scale_x_to_output)
+                                        final_y_lm = int(relative_y_px * scale_y_to_output)
+                                        
+                                        final_x_lm = max(0, min(self.config.IMG_W - 1, final_x_lm))
+                                        final_y_lm = max(0, min(self.config.IMG_H - 1, final_y_lm))
+                                        lip_points.append([final_x_lm, final_y_lm])
+                                
+                                # Convert list of points to a numpy array for cv2.convexHull
+                                if lip_points:
+                                    points_np = np.array(lip_points, np.int32)
+                                    # Compute the convex hull of the lip landmarks
+                                    hull = cv2.convexHull(points_np)
+                                    # Fill the convex hull to create a solid lip mask
+                                    cv2.fillPoly(mask, [hull], 255) # Changed from fillPoly with pts to fillPoly with hull
+                                    final_mask = mask
+                                else:
+                                    final_mask = np.zeros(processed_lip_frame.shape[:2], dtype=np.uint8) # Fallback to empty mask
+
+                                # Convert the processed_lip_frame to YCrCb to apply CLAHE on the Y-channel
+                                ycrcb_image = cv2.cvtColor(processed_lip_frame, cv2.COLOR_RGB2YCrCb)
+                                y_channel, cr_channel, cb_channel = cv2.split(ycrcb_image)
+                                
+                                # Apply CLAHE to the entire Y-channel
+                                clahe_y_channel = self.clahe_obj.apply(y_channel)
+
+                                # Combine the CLAHE enhanced Y-channel with the original Y-channel using the mask
+                                # If mask pixel is white (255), use the CLAHE-enhanced Y-channel pixel
+                                # If mask pixel is black (0), use the original Y-channel pixel
+                                final_y_channel_after_clahe = np.where(final_mask == 255, clahe_y_channel, y_channel)
+                                
+                                # Merge the final Y-channel (with masked CLAHE) with original Cr and Cb channels
+                                merged_ycrcb = cv2.merge([final_y_channel_after_clahe, cr_channel, cb_channel])
+                                
+                                # Convert back to RGB to update processed_lip_frame
+                                processed_lip_frame = cv2.cvtColor(merged_ycrcb, cv2.COLOR_YCrCb2RGB)
+
+                                # --- NEW: Apply black out non-lip areas based on config option ---
+                                if self.config.BLACK_OUT_NON_LIP_AREAS:
+                                    processed_lip_frame[final_mask == 0] = 0
+
+                                # Debug CLAHE application on the masked region of the resized frame
+                                if self.config.SAVE_DEBUG_FRAMES:
+                                    self._debug_frame_processing(processed_lip_frame, frame_idx, 'clahe_applied_masked_lip_frame')
+                                    # Save the generated final mask itself for visual inspection
+                                    self._debug_frame_processing(cv2.cvtColor(final_mask, cv2.COLOR_GRAY2BGR), frame_idx, 'lip_mask') 
+                                    # Debug the final frame with black background if the option is enabled
+                                    if self.config.BLACK_OUT_NON_LIP_AREAS:
+                                        self._debug_frame_processing(processed_lip_frame, frame_idx, 'final_masked_black_background_lip_frame')
+                        # --- END NEW CLAHE application ---
 
                         if self.config.INCLUDE_LANDMARKS_ON_FINAL_OUTPUT and mp_face_landmarks and smoothed_lip_bbox_np is not None:
                             # Apply smoothing also for landmark drawing reference
@@ -476,7 +546,7 @@ class LipExtractor:
                                     if lm_idx < len(mp_face_landmarks.landmark):
                                         orig_x_px = mp_face_landmarks.landmark[lm_idx].x * original_frame_width
                                         orig_y_px = mp_face_landmarks.landmark[lm_idx].y * original_frame_height
-
+                                        
                                         relative_x_px = orig_x_px - x_offset_for_mapping
                                         relative_y_px = orig_y_px - y_offset_for_mapping
 

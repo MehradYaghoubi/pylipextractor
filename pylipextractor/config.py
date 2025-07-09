@@ -14,8 +14,8 @@ class LipExtractionConfig:
     # --- Lip Cropping Settings ---
     # These margins are PROPORTIONAL to the tightly calculated lip bounding box.
     # Adjust these to expand/shrink the area around the detected lips.
-    LIP_PROPORTIONAL_MARGIN_X = 0.20 # Horizontal margin as a proportion of lip width
-    LIP_PROPORTIONAL_MARGIN_Y = 0.30 # Vertical margin as a proportion of lip height
+    LIP_PROPORTIONAL_MARGIN_X = 0.25 # Horizontal margin as a proportion of lip width
+    LIP_PROPORTIONAL_MARGIN_Y = 0.15 # Vertical margin as a proportion of lip height
     
     # These are fixed pixel paddings (applied AFTER proportional margins).
     # Use these for minor fine-tuning if needed.
@@ -46,8 +46,13 @@ class LipExtractionConfig:
 
     # --- Illumination and Contrast Normalization Settings (CLAHE) ---
     APPLY_CLAHE = True  # Set to True to apply CLAHE for illumination/contrast normalization
-    CLAHE_CLIP_LIMIT = 2.0  # Threshold for contrast limiting (recommended: 1.0-4.0)
-    CLAHE_TILE_GRID_SIZE = (8, 8) # Size of grid for histogram equalization (e.g., (8,8) or (16,16))
+    CLAHE_CLIP_LIMIT = 2  # Threshold for contrast limiting (recommended: 1.0-4.0)
+    CLAHE_TILE_GRID_SIZE = (4, 4) # Size of grid for histogram equalization (e.g., (8,8) or (16,16))
+
+    # Black out non-lip areas within the cropped frame ---
+    # If True, pixels outside the detected lip mask (within the bounding box) will be set to black.
+    # This can help models focus exclusively on the lip region.
+    BLACK_OUT_NON_LIP_AREAS = False
 
     # --- New FFmpeg Conversion Options ---
     CONVERT_TO_MP4_IF_NEEDED: bool = False  # Set to True to enable automatic conversion

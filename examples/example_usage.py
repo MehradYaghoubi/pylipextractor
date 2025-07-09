@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # Ensure the project root is in sys.path when running this script directly
 # This allows importing 'pylipextractor' as a package.
 # This specific line is mainly for local development/testing of the example script itself.
-# When pylipextractor is installed via pip, this line is not strictly needed.
+# When pylipexractor is installed via pip, this line is not strictly needed.
 project_root = Path(__file__).resolve().parent.parent # Adjust if example_usage.py is not directly in examples/
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
@@ -33,7 +33,7 @@ def print_section_header(title):
 
 def main():
     """
-    Comprehensive example demonstrating various functionalities of pylipextractor.
+    Comprehensive example demonstrating various functionalities of pylipexractor.
     This script covers configuration, extraction, and post-processing steps.
     """
     logger.info("Welcome to the pylipextractor example!")
@@ -49,12 +49,15 @@ def main():
     logger.info(f"Current default SAVE_DEBUG_FRAMES: {LipExtractor.config.SAVE_DEBUG_FRAMES}")
     logger.info(f"Current default APPLY_CLAHE: {LipExtractor.config.APPLY_CLAHE}")
     
-    # NEW: Show new config options for EMA
+    # Show new config options for EMA
     logger.info(f"Current default APPLY_EMA_SMOOTHING: {LipExtractor.config.APPLY_EMA_SMOOTHING}")
     logger.info(f"Current default EMA_ALPHA: {LipExtractor.config.EMA_ALPHA}")
 
     logger.info(f"Current default CONVERT_TO_MP4_IF_NEEDED: {LipExtractor.config.CONVERT_TO_MP4_IF_NEEDED}")
     logger.info(f"Current default MAX_PROBLEMATIC_FRAMES_PERCENTAGE: {LipExtractor.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE}")
+    
+    # Show new config option for blacking out non-lip areas
+    logger.info(f"Current default BLACK_OUT_NON_LIP_AREAS: {LipExtractor.config.BLACK_OUT_NON_LIP_AREAS}")
 
 
     # Example: Override some default settings for this specific run
@@ -62,25 +65,28 @@ def main():
     LipExtractor.config.SAVE_DEBUG_FRAMES = True # Set to True to save debug images
     LipExtractor.config.MAX_DEBUG_FRAMES = 20    # Limit debug frames saved
     LipExtractor.config.INCLUDE_LANDMARKS_ON_FINAL_OUTPUT = True # Don't draw landmarks on final output
-    LipExtractor.config.APPLY_CLAHE = True       # Apply illumination normalization
+    LipExtractor.config.APPLY_CLAHE = True      # Apply illumination normalization
     
-    # NEW: Configure EMA Smoothing
+    # Configure EMA Smoothing
     LipExtractor.config.APPLY_EMA_SMOOTHING = True # Enable EMA smoothing
-    LipExtractor.config.EMA_ALPHA = 0.4          # Set EMA smoothing factor (e.g., 0.2 for more smoothing)
+    LipExtractor.config.EMA_ALPHA = 0.4            # Set EMA smoothing factor (e.g., 0.2 for more smoothing)
 
-    # NEW: Enable optional MP4 conversion for input videos that are not already MP4
+    # Enable optional MP4 conversion for input videos that are not already MP4
     # This is highly recommended for MPG files or other problematic formats.
     LipExtractor.config.CONVERT_TO_MP4_IF_NEEDED = True
     LipExtractor.config.MP4_TEMP_DIR = Path("./temp_converted_mp4s") # Directory for temporary converted files
 
-    # NEW: Adjust the threshold for rejecting a video based on problematic frames
+    # Adjust the threshold for rejecting a video based on problematic frames
     # If more than this percentage of frames are black/undecipherable, the entire video will be rejected.
     LipExtractor.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE = 10.0 # Example: Allow up to 10% problematic frames
     
+    # NEW: Enable/Disable blacking out non-lip areas. Set to True to see the effect.
+    LipExtractor.config.BLACK_OUT_NON_LIP_AREAS = False
+    
     # LipExtractor.config.IMG_H = 64              # Uncomment to change output height
     # LipExtractor.config.IMG_W = 128             # Uncomment to change output width
-    # LipExtractor.config.LIP_PROPORTIONAL_MARGIN_X = 0.20 # Adjust horizontal margin
-    # LipExtractor.config.LIP_PROPORTIONAL_MARGIN_Y = 0.30 # Adjust vertical margin
+    LipExtractor.config.LIP_PROPORTIONAL_MARGIN_X = 0.25 # Adjust horizontal margin
+    LipExtractor.config.LIP_PROPORTIONAL_MARGIN_Y = 0.15 # Adjust vertical margin
     # LipExtractor.config.MAX_FRAMES = 100        # Uncomment to limit the total number of frames processed
 
     logger.info(f"New SAVE_DEBUG_FRAMES setting: {LipExtractor.config.SAVE_DEBUG_FRAMES}")
@@ -88,13 +94,16 @@ def main():
     logger.info(f"New INCLUDE_LANDMARKS_ON_FINAL_OUTPUT setting: {LipExtractor.config.INCLUDE_LANDMARKS_ON_FINAL_OUTPUT}")
     logger.info(f"New APPLY_CLAHE setting: {LipExtractor.config.APPLY_CLAHE}")
     
-    # NEW: Log new EMA settings
+    # Log new EMA settings
     logger.info(f"New APPLY_EMA_SMOOTHING setting: {LipExtractor.config.APPLY_EMA_SMOOTHING}")
     logger.info(f"New EMA_ALPHA setting: {LipExtractor.config.EMA_ALPHA}")
 
     logger.info(f"New CONVERT_TO_MP4_IF_NEEDED setting: {LipExtractor.config.CONVERT_TO_MP4_IF_NEEDED}")
     logger.info(f"New MP4_TEMP_DIR setting: {LipExtractor.config.MP4_TEMP_DIR}")
     logger.info(f"New MAX_PROBLEMATIC_FRAMES_PERCENTAGE setting: {LipExtractor.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE}")
+    
+    # Log new BLACK_OUT_NON_LIP_AREAS setting
+    logger.info(f"New BLACK_OUT_NON_LIP_AREAS setting: {LipExtractor.config.BLACK_OUT_NON_LIP_AREAS}")
 
 
     # Clear previous debug directory if saving debug frames is enabled
@@ -105,7 +114,7 @@ def main():
         except OSError as e:
             logger.warning(f"Could not clear debug directory '{LipExtractor.config.DEBUG_OUTPUT_DIR}': {e}")
 
-    # NEW: Clear temporary MP4 directory if conversion is enabled
+    # Clear temporary MP4 directory if conversion is enabled
     if LipExtractor.config.CONVERT_TO_MP4_IF_NEEDED and LipExtractor.config.MP4_TEMP_DIR.exists():
         try:
             shutil.rmtree(LipExtractor.config.MP4_TEMP_DIR)
@@ -126,7 +135,7 @@ def main():
     # Define the path to the input video.
     # For this example, place a short video file (e.g., 'bbar8a.mpg' or 'swwz9a.mp4')
     # in the 'examples' directory, next to this script.
-    input_video_path = Path("swwz9a.mpg") # !!! IMPORTANT: CHANGE THIS TO YOUR VIDEO FILE NAME (e.g., 'my_mpg_video.mpg') !!!
+    input_video_path = Path("tima.mp4") # !!! IMPORTANT: CHANGE THIS TO YOUR VIDEO FILE NAME (e.g., 'my_mpg_video.mpg') !!!
     
     if not input_video_path.exists():
         logger.error(f"Error: Video file '{input_video_path.name}' not found.")
@@ -163,7 +172,7 @@ def main():
         num_black_frames = sum(1 for frame in extracted_frames if np.sum(frame) == 0)
         if num_black_frames > 0:
             logger.warning(f"{num_black_frames} completely black frames found in the output. "
-                          "This might indicate issues during extraction, or frames where no valid lip region could be generated.")
+                            "This might indicate issues during extraction, or frames where no valid lip region could be generated.")
         else:
             logger.info("No completely black frames found in the output. This indicates robust extraction for all frames.")
 
