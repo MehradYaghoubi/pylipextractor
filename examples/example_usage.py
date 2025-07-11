@@ -6,12 +6,15 @@ import numpy as np
 import shutil
 import cv2 # Import OpenCV for displaying an image or saving them easily
 import logging # Import the logging module
+import os
 
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+os.environ['GLOG_minloglevel'] = '2'
 # Configure logging at the beginning of the script for example purposes.
 # In a larger application, this might be done in a separate utility or entry point.
 # Set level to INFO to see general progress, or DEBUG to see more detailed internal messages.
 # INFO, WARNING, ERROR, CRITICAL
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 # Get a logger for this specific module
 logger = logging.getLogger(__name__)
 
@@ -135,7 +138,7 @@ def main():
     # Define the path to the input video.
     # For this example, place a short video file (e.g., 'bbar8a.mpg' or 'swwz9a.mp4')
     # in the 'examples' directory, next to this script.
-    input_video_path = Path("tima.mp4") # !!! IMPORTANT: CHANGE THIS TO YOUR VIDEO FILE NAME (e.g., 'my_mpg_video.mpg') !!!
+    input_video_path = Path("bbizzn.mpg") # !!! IMPORTANT: CHANGE THIS TO YOUR VIDEO FILE NAME (e.g., 'my_mpg_video.mpg') !!!
     
     if not input_video_path.exists():
         logger.error(f"Error: Video file '{input_video_path.name}' not found.")
@@ -204,7 +207,6 @@ def main():
 
     else:
         logger.error("Lip frame extraction failed or the video clip was rejected (e.g., too many invalid frames or no faces detected).")
-        logger.error("Please check your input video and consider adjusting LipExtractor.config settings, especially 'MAX_PROBLEMATIC_FRAMES_PERCENTAGE' and ensure FFmpeg is installed if 'CONVERT_TO_MP4_IF_NEEDED' is True.")
 
     logger.info("\nExample script finished. Thank you for using pylipextractor!")
 

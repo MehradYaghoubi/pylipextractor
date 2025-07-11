@@ -133,7 +133,6 @@ class LipExtractor:
                 if lm_idx_all in LIPS_MESH_LANDMARKS_INDICES:
                     color = (255, 0, 0) # Red for actual lip landmarks to highlight them
                 cv2.circle(display_frame, (x, y), 1, color, -1) 
-
             # Draw the calculated bounding box for the lip
             if current_lip_bbox_val is not None and len(current_lip_bbox_val) == 4: # Ensure it's a valid bbox (tuple or list)
                 # Convert to int if it's a numpy array to avoid potential float issues with cv2.rectangle
@@ -306,12 +305,16 @@ class LipExtractor:
         logger.info(f"Processing video: '{current_video_path.name}' ({total_frames_to_process if total_frames_to_process != float('inf') else 'all available'} frames)...") 
 
         num_problematic_frames = 0 
+        black_frame = np.zeros((self.config.IMG_H, self.config.IMG_W, 3), dtype=np.uint8) # Define black frame once
 
         try:
             for frame_idx, frame_av in enumerate(container.decode(video=0)):
                 if total_frames_to_process != float('inf') and frame_idx >= total_frames_to_process:
                     logger.debug(f"Max frames limit ({total_frames_to_process}) reached. Stopping video processing.") 
                     break 
+
+                current_frame_is_problematic = False
+                processed_lip_frame = black_frame.copy() # Initialize with a black frame, will be overwritten if successful
 
                 try:
                     image_rgb = frame_av.to_rgb().to_ndarray()
@@ -322,11 +325,9 @@ class LipExtractor:
                     
                     results = self.mp_face_mesh.process(image_rgb) 
                     
-                    raw_lip_bbox: Optional[np.ndarray] = None # Explicitly type as Optional[np.ndarray]
+                    raw_lip_bbox: Optional[np.ndarray] = None 
                     mp_face_landmarks = None 
                     
-                    frame_is_problematic = True
-
                     if results.multi_face_landmarks:
                         mp_face_landmarks = results.multi_face_landmarks[0]
                         landmarks = mp_face_landmarks.landmark
@@ -407,180 +408,169 @@ class LipExtractor:
                             # Ensure the final box has positive dimensions
                             if (x2_final - x1_final) > 0 and (y2_final - y1_final) > 0:
                                 raw_lip_bbox = np.array([x1_final, y1_final, x2_final, y2_final], dtype=np.int32)
-                                frame_is_problematic = False
                             else:
-                                logger.warning(f"Frame {frame_idx}: Calculated final bounding box has zero or negative dimensions after centering/adjustment. Generating black frame.") 
+                                logger.warning(f"Frame {frame_idx}: Calculated final bounding box has zero or negative dimensions after centering/adjustment. Marking as problematic.") 
+                                current_frame_is_problematic = True
                         else:
-                            logger.warning(f"Frame {frame_idx}: No lip coordinates found. Generating black frame.") 
+                            logger.warning(f"Frame {frame_idx}: No lip coordinates found. Marking as problematic.") 
+                            current_frame_is_problematic = True
                     else:
-                        logger.warning(f"Frame {frame_idx}: No face detected. Generating black frame.") 
+                        logger.warning(f"Frame {frame_idx}: No face detected. Marking as problematic.") 
+                        current_frame_is_problematic = True
 
                     # --- Apply temporal smoothing using EMA if enabled ---
                     smoothed_lip_bbox_np = None
                     if self.config.APPLY_EMA_SMOOTHING:
                         smoothed_lip_bbox_np = self._apply_ema_smoothing(raw_lip_bbox)
                     else:
-                        # If EMA is not applied, use the raw_lip_bbox (or a default black frame bbox if raw_lip_bbox is None)
-                        smoothed_lip_bbox_np = raw_lip_bbox if raw_lip_bbox is not None else np.array([0, 0, self.config.IMG_W, self.config.IMG_H], dtype=np.int32)
-                    
-                    # FIX: Ensure smoothed_lip_bbox_np is not None before attempting to convert to list.
-                    # This should generally not be None if EMA is applied or if raw_lip_bbox fallback is used.
-                    x1_smoothed, y1_smoothed, x2_smoothed, y2_smoothed = smoothed_lip_bbox_np.tolist() if smoothed_lip_bbox_np is not None else (0, 0, 0, 0) # Fallback to 0s if somehow still None
-
+                        smoothed_lip_bbox_np = raw_lip_bbox # Use raw if EMA is off
 
                     # Save debug frames if enabled
                     if self.config.SAVE_DEBUG_FRAMES:
-                        # Pass the raw_lip_bbox (before smoothing) for accurate debug drawing of detected area
-                        # FIX: Pass raw_lip_bbox.tolist() if it's not None, otherwise pass None
                         self._debug_frame_processing(image_rgb, frame_idx, 'landmarks', raw_lip_bbox.tolist() if raw_lip_bbox is not None else None, mp_face_landmarks)
-                        # Also show the effect of smoothing if it's applied
                         if self.config.APPLY_EMA_SMOOTHING:
-                            # FIX: Pass smoothed_lip_bbox_np.tolist() if it's not None, otherwise pass None
                             self._debug_frame_processing(image_rgb, frame_idx, 'smoothed_bbox', smoothed_lip_bbox_np.tolist() if smoothed_lip_bbox_np is not None else None, mp_face_landmarks)
 
-
                     # Crop and resize the frame using the smoothed bounding box
-                    # FIX: Check validity of smoothed_lip_bbox_np and its dimensions
-                    if smoothed_lip_bbox_np is not None and x2_smoothed > x1_smoothed and y2_smoothed > y1_smoothed:
-                        lip_cropped_frame = image_rgb[y1_smoothed:y2_smoothed, x1_smoothed:x2_smoothed]
+                    if not current_frame_is_problematic and smoothed_lip_bbox_np is not None and \
+                       (smoothed_lip_bbox_np[2] > smoothed_lip_bbox_np[0]) and \
+                       (smoothed_lip_bbox_np[3] > smoothed_lip_bbox_np[1]):
                         
-                        current_crop_width = lip_cropped_frame.shape[1]
-                        current_crop_height = lip_cropped_frame.shape[0]
+                        x1_smoothed, y1_smoothed, x2_smoothed, y2_smoothed = smoothed_lip_bbox_np.tolist()
+                        
+                        # Ensure coordinates are within original frame bounds before cropping
+                        x1_smoothed = max(0, min(original_frame_width, x1_smoothed))
+                        y1_smoothed = max(0, min(original_frame_height, y1_smoothed))
+                        x2_smoothed = max(0, min(original_frame_width, x2_smoothed))
+                        y2_smoothed = max(0, min(original_frame_height, y2_smoothed))
 
-                        if current_crop_width > self.config.IMG_W or current_crop_height > self.config.IMG_H:
-                            interpolation_method = cv2.INTER_AREA
+                        # Re-check dimensions after clamping
+                        if (x2_smoothed - x1_smoothed) <= 0 or (y2_smoothed - y1_smoothed) <= 0:
+                            logger.warning(f"Frame {frame_idx}: Smoothed bounding box became invalid after clamping. Marking as problematic.")
+                            current_frame_is_problematic = True
                         else:
-                            interpolation_method = cv2.INTER_LANCZOS4 
-                        
-                        final_resized_lip = cv2.resize(lip_cropped_frame, (self.config.IMG_W, self.config.IMG_H), interpolation=interpolation_method)
-                        
-                        processed_lip_frame = final_resized_lip.copy() 
-                        
-                        # --- Apply CLAHE only to the masked lip region within the cropped and resized frame ---
-                        # This ensures CLAHE enhances only the lip pixels, not the surrounding area of the bounding box.
-                        if self.config.APPLY_CLAHE and self.clahe_obj is not None and mp_face_landmarks is not None and smoothed_lip_bbox_np is not None:
-                            mask = np.zeros(processed_lip_frame.shape[:2], dtype=np.uint8) # Grayscale mask
-
-                            x_offset_for_mapping = smoothed_lip_bbox_np[0] 
-                            y_offset_for_mapping = smoothed_lip_bbox_np[1]
+                            lip_cropped_frame = image_rgb[y1_smoothed:y2_smoothed, x1_smoothed:x2_smoothed]
                             
-                            width_cropped_for_mapping = smoothed_lip_bbox_np[2] - smoothed_lip_bbox_np[0]
-                            height_cropped_for_mapping = smoothed_lip_bbox_np[3] - smoothed_lip_bbox_np[1]
+                            current_crop_width = lip_cropped_frame.shape[1]
+                            current_crop_height = lip_cropped_frame.shape[0]
 
-                            if width_cropped_for_mapping > 0 and height_cropped_for_mapping > 0:
-                                scale_x_to_output = self.config.IMG_W / width_cropped_for_mapping
-                                scale_y_to_output = self.config.IMG_H / height_cropped_for_mapping
+                            if current_crop_width > self.config.IMG_W or current_crop_height > self.config.IMG_H:
+                                interpolation_method = cv2.INTER_AREA
+                            else:
+                                interpolation_method = cv2.INTER_LANCZOS4 
+                            
+                            final_resized_lip = cv2.resize(lip_cropped_frame, (self.config.IMG_W, self.config.IMG_H), interpolation=interpolation_method)
+                            
+                            processed_lip_frame = final_resized_lip.copy() 
+                            
+                            # --- Apply CLAHE only to the masked lip region within the cropped and resized frame ---
+                            if self.config.APPLY_CLAHE and self.clahe_obj is not None and mp_face_landmarks is not None and smoothed_lip_bbox_np is not None:
+                                mask = np.zeros(processed_lip_frame.shape[:2], dtype=np.uint8) # Grayscale mask
 
-                                lip_points = []
-                                for lm_idx in LIPS_MESH_LANDMARKS_INDICES:
-                                    if lm_idx < len(mp_face_landmarks.landmark):
-                                        orig_x_px = mp_face_landmarks.landmark[lm_idx].x * original_frame_width
-                                        orig_y_px = mp_face_landmarks.landmark[lm_idx].y * original_frame_height
-                                        
-                                        relative_x_px = orig_x_px - x_offset_for_mapping
-                                        relative_y_px = orig_y_px - y_offset_for_mapping
-
-                                        final_x_lm = int(relative_x_px * scale_x_to_output)
-                                        final_y_lm = int(relative_y_px * scale_y_to_output)
-                                        
-                                        final_x_lm = max(0, min(self.config.IMG_W - 1, final_x_lm))
-                                        final_y_lm = max(0, min(self.config.IMG_H - 1, final_y_lm))
-                                        lip_points.append([final_x_lm, final_y_lm])
+                                x_offset_for_mapping = smoothed_lip_bbox_np[0] 
+                                y_offset_for_mapping = smoothed_lip_bbox_np[1]
                                 
-                                # Convert list of points to a numpy array for cv2.convexHull
-                                if lip_points:
-                                    points_np = np.array(lip_points, np.int32)
-                                    # Compute the convex hull of the lip landmarks
-                                    hull = cv2.convexHull(points_np)
-                                    # Fill the convex hull to create a solid lip mask
-                                    cv2.fillPoly(mask, [hull], 255) # Changed from fillPoly with pts to fillPoly with hull
-                                    final_mask = mask
-                                else:
-                                    final_mask = np.zeros(processed_lip_frame.shape[:2], dtype=np.uint8) # Fallback to empty mask
+                                width_cropped_for_mapping = smoothed_lip_bbox_np[2] - smoothed_lip_bbox_np[0]
+                                height_cropped_for_mapping = smoothed_lip_bbox_np[3] - smoothed_lip_bbox_np[1]
 
-                                # Convert the processed_lip_frame to YCrCb to apply CLAHE on the Y-channel
-                                ycrcb_image = cv2.cvtColor(processed_lip_frame, cv2.COLOR_RGB2YCrCb)
-                                y_channel, cr_channel, cb_channel = cv2.split(ycrcb_image)
-                                
-                                # Apply CLAHE to the entire Y-channel
-                                clahe_y_channel = self.clahe_obj.apply(y_channel)
+                                if width_cropped_for_mapping > 0 and height_cropped_for_mapping > 0:
+                                    scale_x_to_output = self.config.IMG_W / width_cropped_for_mapping
+                                    scale_y_to_output = self.config.IMG_H / height_cropped_for_mapping
 
-                                # Combine the CLAHE enhanced Y-channel with the original Y-channel using the mask
-                                # If mask pixel is white (255), use the CLAHE-enhanced Y-channel pixel
-                                # If mask pixel is black (0), use the original Y-channel pixel
-                                final_y_channel_after_clahe = np.where(final_mask == 255, clahe_y_channel, y_channel)
-                                
-                                # Merge the final Y-channel (with masked CLAHE) with original Cr and Cb channels
-                                merged_ycrcb = cv2.merge([final_y_channel_after_clahe, cr_channel, cb_channel])
-                                
-                                # Convert back to RGB to update processed_lip_frame
-                                processed_lip_frame = cv2.cvtColor(merged_ycrcb, cv2.COLOR_YCrCb2RGB)
+                                    lip_points = []
+                                    for lm_idx in LIPS_MESH_LANDMARKS_INDICES:
+                                        if lm_idx < len(mp_face_landmarks.landmark):
+                                            orig_x_px = mp_face_landmarks.landmark[lm_idx].x * original_frame_width
+                                            orig_y_px = mp_face_landmarks.landmark[lm_idx].y * original_frame_height
+                                            
+                                            relative_x_px = orig_x_px - x_offset_for_mapping
+                                            relative_y_px = orig_y_px - y_offset_for_mapping
 
-                                # --- NEW: Apply black out non-lip areas based on config option ---
-                                if self.config.BLACK_OUT_NON_LIP_AREAS:
-                                    processed_lip_frame[final_mask == 0] = 0
+                                            final_x_lm = int(relative_x_px * scale_x_to_output)
+                                            final_y_lm = int(relative_y_px * scale_y_to_output)
+                                            
+                                            final_x_lm = max(0, min(self.config.IMG_W - 1, final_x_lm))
+                                            final_y_lm = max(0, min(self.config.IMG_H - 1, final_y_lm))
+                                            lip_points.append([final_x_lm, final_y_lm])
+                                    
+                                    if lip_points:
+                                        points_np = np.array(lip_points, np.int32)
+                                        hull = cv2.convexHull(points_np)
+                                        cv2.fillPoly(mask, [hull], 255) 
+                                        final_mask = mask
+                                    else:
+                                        final_mask = np.zeros(processed_lip_frame.shape[:2], dtype=np.uint8) 
 
-                                # Debug CLAHE application on the masked region of the resized frame
-                                if self.config.SAVE_DEBUG_FRAMES:
-                                    self._debug_frame_processing(processed_lip_frame, frame_idx, 'clahe_applied_masked_lip_frame')
-                                    # Save the generated final mask itself for visual inspection
-                                    self._debug_frame_processing(cv2.cvtColor(final_mask, cv2.COLOR_GRAY2BGR), frame_idx, 'lip_mask') 
-                                    # Debug the final frame with black background if the option is enabled
+                                    ycrcb_image = cv2.cvtColor(processed_lip_frame, cv2.COLOR_RGB2YCrCb)
+                                    y_channel, cr_channel, cb_channel = cv2.split(ycrcb_image)
+                                    
+                                    clahe_y_channel = self.clahe_obj.apply(y_channel)
+
+                                    final_y_channel_after_clahe = np.where(final_mask == 255, clahe_y_channel, y_channel)
+                                    
+                                    merged_ycrcb = cv2.merge([final_y_channel_after_clahe, cr_channel, cb_channel])
+                                    
+                                    processed_lip_frame = cv2.cvtColor(merged_ycrcb, cv2.COLOR_YCrCb2RGB)
+
                                     if self.config.BLACK_OUT_NON_LIP_AREAS:
-                                        self._debug_frame_processing(processed_lip_frame, frame_idx, 'final_masked_black_background_lip_frame')
-                        # --- END NEW CLAHE application ---
+                                        processed_lip_frame[final_mask == 0] = 0
 
-                        if self.config.INCLUDE_LANDMARKS_ON_FINAL_OUTPUT and mp_face_landmarks and smoothed_lip_bbox_np is not None:
-                            # Apply smoothing also for landmark drawing reference
-                            x_offset_for_mapping = smoothed_lip_bbox_np[0] 
-                            y_offset_for_mapping = smoothed_lip_bbox_np[1]
+                                    if self.config.SAVE_DEBUG_FRAMES:
+                                        self._debug_frame_processing(processed_lip_frame, frame_idx, 'clahe_applied_masked_lip_frame')
+                                        self._debug_frame_processing(cv2.cvtColor(final_mask, cv2.COLOR_GRAY2BGR), frame_idx, 'lip_mask') 
+                                        if self.config.BLACK_OUT_NON_LIP_AREAS:
+                                            self._debug_frame_processing(processed_lip_frame, frame_idx, 'final_masked_black_background_lip_frame')
+                                else:
+                                    # If width_cropped_for_mapping or height_cropped_for_mapping is not positive
+                                    logger.warning(f"Frame {frame_idx}: Cropped dimensions for mask mapping are invalid. Skipping CLAHE and landmark drawing.")
+                                    
+                            if self.config.INCLUDE_LANDMARKS_ON_FINAL_OUTPUT and mp_face_landmarks and smoothed_lip_bbox_np is not None:
+                                x_offset_for_mapping = smoothed_lip_bbox_np[0] 
+                                y_offset_for_mapping = smoothed_lip_bbox_np[1]
+                                
+                                width_cropped_for_mapping = smoothed_lip_bbox_np[2] - smoothed_lip_bbox_np[0]
+                                height_cropped_for_mapping = smoothed_lip_bbox_np[3] - smoothed_lip_bbox_np[1]
+
+                                if width_cropped_for_mapping > 0 and height_cropped_for_mapping > 0:
+                                    scale_x_to_output = self.config.IMG_W / width_cropped_for_mapping
+                                    scale_y_to_output = self.config.IMG_H / height_cropped_for_mapping
+
+                                    for lm_idx in LIPS_MESH_LANDMARKS_INDICES:
+                                        if lm_idx < len(mp_face_landmarks.landmark):
+                                            orig_x_px = mp_face_landmarks.landmark[lm_idx].x * original_frame_width
+                                            orig_y_px = mp_face_landmarks.landmark[lm_idx].y * original_frame_height
+                                            
+                                            relative_x_px = orig_x_px - x_offset_for_mapping
+                                            relative_y_px = orig_y_px - y_offset_for_mapping
+
+                                            final_x_lm = int(relative_x_px * scale_x_to_output)
+                                            final_y_lm = int(relative_y_px * scale_y_to_output)
+                                            
+                                            final_x_lm = max(0, min(self.config.IMG_W - 1, final_x_lm))
+                                            final_y_lm = max(0, min(self.config.IMG_H - 1, final_y_lm))
+                                            
+                                            cv2.circle(processed_lip_frame, (final_x_lm, final_y_lm), 1, (0, 255, 0), -1) 
+                                else:
+                                    logger.warning(f"Frame {frame_idx}: Cropped dimensions for landmark mapping are invalid. Skipping landmark drawing.")
                             
-                            width_cropped_for_mapping = smoothed_lip_bbox_np[2] - smoothed_lip_bbox_np[0]
-                            height_cropped_for_mapping = smoothed_lip_bbox_np[3] - smoothed_lip_bbox_np[1]
-
-                            if width_cropped_for_mapping > 0 and height_cropped_for_mapping > 0:
-                                scale_x_to_output = self.config.IMG_W / width_cropped_for_mapping
-                                scale_y_to_output = self.config.IMG_H / height_cropped_for_mapping
-
-                                for lm_idx in LIPS_MESH_LANDMARKS_INDICES:
-                                    if lm_idx < len(mp_face_landmarks.landmark):
-                                        orig_x_px = mp_face_landmarks.landmark[lm_idx].x * original_frame_width
-                                        orig_y_px = mp_face_landmarks.landmark[lm_idx].y * original_frame_height
-                                        
-                                        relative_x_px = orig_x_px - x_offset_for_mapping
-                                        relative_y_px = orig_y_px - y_offset_for_mapping
-
-                                        final_x_lm = int(relative_x_px * scale_x_to_output)
-                                        final_y_lm = int(relative_y_px * scale_y_to_output)
-                                        
-                                        # Clamp landmarks to ensure they are within the output image bounds
-                                        final_x_lm = max(0, min(self.config.IMG_W - 1, final_x_lm))
-                                        final_y_lm = max(0, min(self.config.IMG_H - 1, final_y_lm))
-                                        
-                                        cv2.circle(processed_lip_frame, (final_x_lm, final_y_lm), 1, (0, 255, 0), -1) 
-                                        
-                        processed_frames_temp_list.append(processed_lip_frame)
-                    else:
-                        # If frame is problematic or smoothed bbox is invalid, append a black frame
-                        logger.warning(f"Frame {frame_idx}: Smoothed bounding box is invalid ({smoothed_lip_bbox_np}). Generating black frame.")
-                        black_frame = np.zeros((self.config.IMG_H, self.config.IMG_W, 3), dtype=np.uint8)
-                        processed_frames_temp_list.append(black_frame)
-                        num_problematic_frames += 1 
-                        if self.config.SAVE_DEBUG_FRAMES:
-                            self._debug_frame_processing(black_frame, frame_idx, 'black_generated')
+                    else: # This block is for when current_frame_is_problematic is True or smoothed_lip_bbox_np is invalid.
+                        logger.warning(f"Frame {frame_idx}: Problematic frame (face/lip detection failed or invalid bounding box). Appending black frame.")
+                        current_frame_is_problematic = True # Ensure it's marked problematic
 
                 except Exception as e:
-                    logger.warning(f"Unexpected error processing frame {frame_idx} from '{current_video_path.name}': {e}. This frame will be treated as problematic.") 
-                    black_frame = np.zeros((self.config.IMG_H, self.config.IMG_W, 3), dtype=np.uint8)
-                    processed_frames_temp_list.append(black_frame)
-                    num_problematic_frames += 1 
-                    # If an error occurs, treat current bbox as None for smoothing purposes
+                    logger.warning(f"Unexpected error processing frame {frame_idx} from '{current_video_path.name}': {e}. Appending black frame.") 
+                    current_frame_is_problematic = True 
                     if self.config.APPLY_EMA_SMOOTHING:
-                        # Still update EMA to potentially "drift" towards a neutral position
-                        # or maintain last known good state if 'None' is handled by EMA logic to repeat
-                        self._apply_ema_smoothing(None) # Pass None to EMA
-                    else:
-                        pass 
+                        self._apply_ema_smoothing(None) # Pass None to EMA to maintain continuity or drift
+
+                if current_frame_is_problematic:
+                    processed_frames_temp_list.append(black_frame.copy())
+                    num_problematic_frames += 1 
+                    if self.config.SAVE_DEBUG_FRAMES:
+                        self._debug_frame_processing(black_frame, frame_idx, 'black_generated')
+                else:
+                    processed_frames_temp_list.append(processed_lip_frame)
+
 
         finally:
             container.close()
@@ -601,25 +591,27 @@ class LipExtractor:
         # Apply MAX_FRAMES limit if specified
         if self.config.MAX_FRAMES is not None:
             if final_processed_np_frames.shape[0] > self.config.MAX_FRAMES:
+                # If we processed more frames than MAX_FRAMES, truncate
                 final_processed_np_frames = final_processed_np_frames[:self.config.MAX_FRAMES]
                 logger.info(f"Video truncated to {self.config.MAX_FRAMES} frames as per configuration.") 
             elif final_processed_np_frames.shape[0] < self.config.MAX_FRAMES:
+                # If we processed fewer frames, pad with black frames
                 padding_needed = self.config.MAX_FRAMES - final_processed_np_frames.shape[0]
                 black_padding = np.zeros((padding_needed, self.config.IMG_H, self.config.IMG_W, 3), dtype=np.uint8)
                 final_processed_np_frames = np.concatenate((final_processed_np_frames, black_padding), axis=0)
-                # Count these new black frames as problematic if the original video was shorter
-                num_problematic_frames += padding_needed
+                num_problematic_frames += padding_needed # Account for padded black frames as problematic
                 logger.info(f"Video padded with {padding_needed} black frames to reach {self.config.MAX_FRAMES} frames as per configuration.") 
 
 
         total_output_frames = final_processed_np_frames.shape[0]
         
-        percentage_problematic_frames = (num_problematic_frames / total_output_frames) * 100
-
-        if total_output_frames == 0 or percentage_problematic_frames > self.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE: 
-            logger.warning(f"Clip '{original_video_path.name}' rejected: {percentage_problematic_frames:.2f}% problematic frames (exceeds {self.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE}% allowed).") 
+        # Final check on problematic frames percentage
+        if total_output_frames == 0 or (total_output_frames > 0 and (num_problematic_frames / total_output_frames) * 100 > self.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE): 
+            percentage_problematic_frames = (num_problematic_frames / total_output_frames) * 100 if total_output_frames > 0 else 100
+            logger.error(f"Clip '{original_video_path.name}' rejected: {percentage_problematic_frames:.2f}% problematic frames (exceeds {self.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE}% allowed). Returning None.") 
             return None
         elif num_problematic_frames > 0:
+            percentage_problematic_frames = (num_problematic_frames / total_output_frames) * 100
             logger.info(f"Clip '{original_video_path.name}': {percentage_problematic_frames:.2f}% problematic frames found. Clip retained.") 
         
         # Save to .npy file if a path is provided
