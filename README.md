@@ -43,57 +43,7 @@ pip install -e .
 See example_usage.py in the project root for a full demonstration on how to use the LipExtractor class to process a video and save the lip frames.
 
 Example:
-```bash
-from pathlib import Path
-from pylipextractor.lip_extractor import LipExtractor
-
-# Set your video path (e.g., ensure 'bbar8a.mpg' is in your current working directory or adjust path)
-# You can use various formats like .mpg, .avi, .mp4, etc.
-input_video_path = Path("your_video.mpg") # !!! IMPORTANT: CHANGE THIS TO YOUR VIDEO FILE NAME !!!
-output_npy_directory = Path("./output_data")
-output_npy_filename = input_video_path.stem + ".npy"
-output_npy_path = output_npy_directory / output_npy_filename
-
-# --- Configure LipExtractor settings (optional, defaults are from config.py) ---
-# You can override any default setting like this:
-LipExtractor.config.SAVE_DEBUG_FRAMES = True
-LipExtractor.config.MAX_DEBUG_FRAMES = 75 # Limit debug frames saved
-LipExtractor.config.APPLY_CLAHE = True   # Ensure CLAHE is applied for contrast
-LipExtractor.config.INCLUDE_LANDMARKS_ON_FINAL_OUTPUT = False # Don't draw landmarks on final output
-
-# New: Enable optional MP4 conversion for input videos that are not already MP4.
-# This is highly recommended for problematic formats like some .mpg files.
-LipExtractor.config.CONVERT_TO_MP4_IF_NEEDED = True
-LipExtractor.config.MP4_TEMP_DIR = Path("./temp_converted_mp4s") # Directory for temporary converted files
-
-# New: Adjust the Exponential Moving Average (EMA) alpha for bounding box smoothing (default is 0.1)
-# A smaller EMA_ALPHA means more smoothing.
-LipExtractor.config.EMA_ALPHA = 0.05 # Example: more smoothing than default
-
-# New: Set the maximum percentage of problematic (e.g., black) frames allowed.
-# If a video exceeds this threshold, it will be rejected as invalid.
-LipExtractor.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE = 30.0 # Allow up to 30% problematic frames
-# LipExtractor.config.MAX_FRAMES = 100         # Uncomment to limit the total number of frames processed
-
-# Create an instance of the extractor
-extractor = LipExtractor()
-
-# Perform extraction
-print(f"Starting extraction for {input_video_path.name}...")
-extracted_frames = extractor.extract_lip_frames(input_video_path, output_npy_path=output_npy_path)
-
-if extracted_frames is not None:
-    print(f"Successfully extracted {extracted_frames.shape[0]} frames.")
-    print(f"Frames saved to {output_npy_path}")
-else:
-    print("Extraction failed or the video clip was rejected (e.g., too many invalid frames or no faces detected).")
-
-```
-
-To convert the extracted .npy file into individual image frames (e.g., PNGs), use the provided save_npy_frames_to_images.py utility script:
-```bash
-python save_npy_frames_to_images.py
-```
+Content is how the package is used in the (examples) folder
 
 ## Dependencies
 
