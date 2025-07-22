@@ -28,6 +28,12 @@ LIPS_MESH_LANDMARKS_INDICES = sorted(list(set([
     idx for connection in _LIP_CONNECTIONS for idx in connection
 ])))
 
+# Additional landmarks for expanded bounding box
+NOSE_BOTTOM_LANDMARK_INDEX = 2
+CHIN_BOTTOM_LANDMARK_INDEX = 175
+# LEFT_CHEEK_LANDMARK_INDEX = 58
+# RIGHT_CHEEK_LANDMARK_INDEX = 288
+
 # Import MainConfig here so LipExtractor can manage it as a class-level attribute
 from pylipextractor.config import MainConfig, LipExtractionConfig 
 
@@ -130,9 +136,9 @@ class LipExtractor:
             for lm_idx_all, lm in enumerate(mp_face_landmarks.landmark):
                 x, y = int(lm.x * frame.shape[1]), int(lm.y * frame.shape[0])
                 color = (0, 255, 0) # Default green for all landmarks
-                if lm_idx_all in LIPS_MESH_LANDMARKS_INDICES:
+                if lm_idx_all in LIPS_MESH_LANDMARKS_INDICES or lm_idx_all in [NOSE_BOTTOM_LANDMARK_INDEX, CHIN_BOTTOM_LANDMARK_INDEX]:
                     color = (255, 0, 0) # Red for actual lip landmarks to highlight them
-                cv2.circle(display_frame, (x, y), 1, color, -1) 
+                cv2.circle(display_frame, (x, y), 1, color, -1)
             # Draw the calculated bounding box for the lip
             if current_lip_bbox_val is not None and len(current_lip_bbox_val) == 4: # Ensure it's a valid bbox (tuple or list)
                 # Convert to int if it's a numpy array to avoid potential float issues with cv2.rectangle
@@ -339,12 +345,11 @@ class LipExtractor:
                                 lip_x_coords.append(landmarks[idx].x * original_frame_width)
                                 lip_y_coords.append(landmarks[idx].y * original_frame_height)
 
-                        if lip_x_coords and lip_y_coords: 
-                            # Calculate tight bounding box around actual lip landmarks
+                        if lip_x_coords and lip_y_coords:
+                            min_y_tight = landmarks[NOSE_BOTTOM_LANDMARK_INDEX].y * original_frame_height
+                            max_y_tight = landmarks[CHIN_BOTTOM_LANDMARK_INDEX].y * original_frame_height
                             min_x_tight = np.min(lip_x_coords)
                             max_x_tight = np.max(lip_x_coords)
-                            min_y_tight = np.min(lip_y_coords)
-                            max_y_tight = np.max(lip_y_coords)
 
                             # Calculate the centroid of the tight lip region
                             lip_centroid_x = (min_x_tight + max_x_tight) / 2
