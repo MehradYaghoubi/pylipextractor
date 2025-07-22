@@ -72,7 +72,7 @@ def main():
     
     # Configure EMA Smoothing
     LipExtractor.config.APPLY_EMA_SMOOTHING = True # Enable EMA smoothing
-    LipExtractor.config.EMA_ALPHA = 0.4            # Set EMA smoothing factor (e.g., 0.2 for more smoothing)
+    LipExtractor.config.EMA_ALPHA = 0.2            # Set EMA smoothing factor (e.g., 0.2 for more smoothing)
 
     # Enable optional MP4 conversion for input videos that are not already MP4
     # This is highly recommended for MPG files or other problematic formats.
@@ -86,10 +86,10 @@ def main():
     # NEW: Enable/Disable blacking out non-lip areas. Set to True to see the effect.
     LipExtractor.config.BLACK_OUT_NON_LIP_AREAS = False
     
-    # LipExtractor.config.IMG_H = 64              # Uncomment to change output height
-    # LipExtractor.config.IMG_W = 128             # Uncomment to change output width
-    LipExtractor.config.LIP_PROPORTIONAL_MARGIN_X = 0.25 # Adjust horizontal margin
-    LipExtractor.config.LIP_PROPORTIONAL_MARGIN_Y = 0.15 # Adjust vertical margin
+    LipExtractor.config.IMG_H = 50              # Uncomment to change output height
+    LipExtractor.config.IMG_W = 70             # Uncomment to change output width
+    LipExtractor.config.LIP_PROPORTIONAL_MARGIN_X = 0.0 # Adjust horizontal margin
+    LipExtractor.config.LIP_PROPORTIONAL_MARGIN_Y = 0.02 # Adjust vertical margin
     # LipExtractor.config.MAX_FRAMES = 100        # Uncomment to limit the total number of frames processed
 
     logger.info(f"New SAVE_DEBUG_FRAMES setting: {LipExtractor.config.SAVE_DEBUG_FRAMES}")
@@ -138,7 +138,7 @@ def main():
     # Define the path to the input video.
     # For this example, place a short video file (e.g., 'bbar8a.mpg' or 'swwz9a.mp4')
     # in the 'examples' directory, next to this script.
-    input_video_path = Path("bbizzn.mpg") # !!! IMPORTANT: CHANGE THIS TO YOUR VIDEO FILE NAME (e.g., 'my_mpg_video.mpg') !!!
+    input_video_path = Path("bbafzp.mpg") # !!! IMPORTANT: CHANGE THIS TO YOUR VIDEO FILE NAME (e.g., 'my_mpg_video.mpg') !!!
     
     if not input_video_path.exists():
         logger.error(f"Error: Video file '{input_video_path.name}' not found.")

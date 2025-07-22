@@ -7,15 +7,15 @@ class LipExtractionConfig:
     Configuration for lip extraction and video processing parameters.
     """
     # --- Output frame dimensions ---
-    IMG_H = 48 # Desired height for the output lip frames
-    IMG_W = 96 # Desired width for the output lip frames
+    IMG_H = 50 # Desired height for the output lip frames
+    IMG_W = 70 # Desired width for the output lip frames
     MAX_FRAMES = None # Maximum frames to extract from a video. If None, extracts all frames.
 
     # --- Lip Cropping Settings ---
     # These margins are PROPORTIONAL to the tightly calculated lip bounding box.
     # Adjust these to expand/shrink the area around the detected lips.
-    LIP_PROPORTIONAL_MARGIN_X = 0.25 # Horizontal margin as a proportion of lip width
-    LIP_PROPORTIONAL_MARGIN_Y = 0.15 # Vertical margin as a proportion of lip height
+    LIP_PROPORTIONAL_MARGIN_X = 0.00 # Horizontal margin as a proportion of lip width
+    LIP_PROPORTIONAL_MARGIN_Y = 0.02 # Vertical margin as a proportion of lip height
     
     # These are fixed pixel paddings (applied AFTER proportional margins).
     # Use these for minor fine-tuning if needed.
@@ -32,7 +32,7 @@ class LipExtractionConfig:
     # Removed: SMOOTHING_WINDOW_SIZE is replaced by EMA_ALPHA for EMA smoothing
     # New: EMA Smoothing for Bounding Boxes
     APPLY_EMA_SMOOTHING: bool = True # Set to True to apply EMA smoothing to bounding box coordinates
-    EMA_ALPHA: float = 0.3 # EMA smoothing factor (0.0 to 1.0, higher means less smoothing, 1.0 means no smoothing)
+    EMA_ALPHA: float = 0.2 # EMA smoothing factor (0.0 to 1.0, higher means less smoothing, 1.0 means no smoothing)
 
     # --- Debugging & Output Customization Settings ---
     DEBUG_OUTPUT_DIR = Path("./lip_extraction_debug") # Directory to save debug frames
@@ -46,8 +46,8 @@ class LipExtractionConfig:
 
     # --- Illumination and Contrast Normalization Settings (CLAHE) ---
     APPLY_CLAHE = True  # Set to True to apply CLAHE for illumination/contrast normalization
-    CLAHE_CLIP_LIMIT = 2  # Threshold for contrast limiting (recommended: 1.0-4.0)
-    CLAHE_TILE_GRID_SIZE = (4, 4) # Size of grid for histogram equalization (e.g., (8,8) or (16,16))
+    CLAHE_CLIP_LIMIT = 0.3  # Threshold for contrast limiting (recommended: 1.0-4.0)
+    CLAHE_TILE_GRID_SIZE = (2, 2) # Size of grid for histogram equalization (e.g., (8,8) or (16,16))
 
     # Black out non-lip areas within the cropped frame ---
     # If True, pixels outside the detected lip mask (within the bounding box) will be set to black.
