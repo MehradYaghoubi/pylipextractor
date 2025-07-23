@@ -25,6 +25,7 @@ class LipExtractionConfig:
     LIP_PADDING_BOTTOM_PX = 0
 
     # --- General Processing Settings ---
+    MAX_FACES = 1 # Maximum number of faces to detect in a video.
     NUM_CPU_CORES = 5 # Number of CPU cores for parallel processing (if implemented in batch mode).
     # Renamed: Now represents max allowed percentage of ANY problematic frame (not just black)
     MAX_PROBLEMATIC_FRAMES_PERCENTAGE = 15.0 
@@ -46,6 +47,7 @@ class LipExtractionConfig:
 
     # --- Illumination and Contrast Normalization Settings ---
     APPLY_HISTOGRAM_MATCHING = True  # Set to True to apply histogram matching
+    APPLY_SKIN_TONE_NORMALIZATION = False # Set to True to apply skin tone-based white balance
 
     # Black out non-lip areas within the cropped frame ---
     # If True, pixels outside the detected lip mask (within the bounding box) will be set to black.
