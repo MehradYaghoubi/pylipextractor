@@ -75,7 +75,7 @@ PyLipExtractor is highly configurable. You can change the default settings by mo
 
 ### Feature Toggles
 
-- `APPLY_CLAHE`: Whether to apply Contrast Limited Adaptive Histogram Equalization (CLAHE) for illumination normalization. (Default: `True`)
+- `APPLY_HISTOGRAM_MATCHING`: Whether to apply histogram matching for illumination normalization. (Default: `True`)
 - `APPLY_EMA_SMOOTHING`: Whether to apply Exponential Moving Average (EMA) smoothing to the bounding box coordinates for temporal stability. (Default: `True`)
 - `CONVERT_TO_MP4_IF_NEEDED`: Whether to automatically convert non-MP4 videos to a compatible MP4 format using FFmpeg. (Default: `True`)
 - `BLACK_OUT_NON_LIP_AREAS`: Whether to black out the areas outside the lip region in the output frames. (Default: `False`)
@@ -106,7 +106,7 @@ To ensure that the lip crops are stable and consistent across frames, PyLipExtra
 
 ### Illumination Normalization
 
-The package includes an optional CLAHE (Contrast Limited Adaptive Histogram Equalization) filter to normalize the brightness and contrast of the video frames. This can significantly improve the performance of lip-reading models, especially in videos with varying lighting conditions.
+The package uses histogram matching to normalize the illumination of the video frames. This method works by matching the histogram of each frame to the histogram of a reference frame (the middle frame of the video). This ensures that the color and brightness of the frames are consistent throughout the video, which can significantly improve the performance of lip-reading models.
 
 ### Video Conversion
 

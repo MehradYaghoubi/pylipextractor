@@ -12,6 +12,49 @@ import subprocess
 from typing import Tuple, Optional, List, Union
 import logging 
 
+def _histogram_matching(src, ref):
+    """
+    Matches the histogram of a source image to a reference image.
+    """
+    # Convert the images to YCrCb color space
+    src_ycrcb = cv2.cvtColor(src, cv2.COLOR_RGB2YCrCb)
+    ref_ycrcb = cv2.cvtColor(ref, cv2.COLOR_RGB2YCrCb)
+
+    # Split the images into their components
+    src_y, src_cr, src_cb = cv2.split(src_ycrcb)
+    ref_y, _, _ = cv2.split(ref_ycrcb)
+
+    # Compute the histograms of the Y channels
+    src_hist, _ = np.histogram(src_y.flatten(), 256, [0, 256])
+    ref_hist, _ = np.histogram(ref_y.flatten(), 256, [0, 256])
+
+    # Compute the cumulative distribution functions (CDFs)
+    src_cdf = src_hist.cumsum()
+    ref_cdf = ref_hist.cumsum()
+
+    # Normalize the CDFs
+    src_cdf_normalized = src_cdf * ref_hist.max() / src_hist.max()
+
+    # Create a lookup table
+    lookup_table = np.zeros(256, dtype=np.uint8)
+    for i in range(256):
+        j = 255
+        while j >= 0 and src_cdf_normalized[i] < ref_cdf[j]:
+            j -= 1
+        lookup_table[i] = j
+
+    # Apply the lookup table to the Y channel of the source image
+    src_y_matched = cv2.LUT(src_y, lookup_table)
+
+    # Merge the matched Y channel back with the original Cr and Cb channels
+    src_ycrcb_matched = cv2.merge([src_y_matched, src_cr, src_cb])
+
+    # Convert the matched YCrCb image back to RGB color space
+    src_matched = cv2.cvtColor(src_ycrcb_matched, cv2.COLOR_YCrCb2RGB)
+
+    return src_matched
+
+
 # --- Setup for logging ---
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -64,16 +107,6 @@ class LipExtractor:
         # --- Changes for EMA Smoothing ---
         self.ema_smoothed_bbox = None # To store the last smoothed bounding box for EMA
         # --- End Changes for EMA Smoothing ---
-
-        # Initialize CLAHE object if enabled in config
-        self.clahe_obj = None
-        if self.config.APPLY_CLAHE:
-            # CLAHE operates on grayscale images (or the L-channel of LAB)
-            # For RGB input, we'll convert to YCrCb and apply to Y channel.
-            self.clahe_obj = cv2.createCLAHE(
-                clipLimit=self.config.CLAHE_CLIP_LIMIT,
-                tileGridSize=self.config.CLAHE_TILE_GRID_SIZE
-            )
 
     @classmethod
     def _initialize_mediapipe_if_not_set(cls):
@@ -310,6 +343,18 @@ class LipExtractor:
 
         logger.info(f"Processing video: '{current_video_path.name}' ({total_frames_to_process if total_frames_to_process != float('inf') else 'all available'} frames)...") 
 
+        # --- Get reference frame for histogram matching ---
+        ref_frame = None
+        if self.config.APPLY_HISTOGRAM_MATCHING:
+            try:
+                container.seek(int(container.duration / 2))
+                ref_frame_av = next(container.decode(video=0))
+                ref_frame = ref_frame_av.to_rgb().to_ndarray()
+                container.seek(0)
+            except (StopIteration, av.AVError):
+                logger.warning("Could not get reference frame for histogram matching. Histogram matching will be disabled.")
+                self.config.APPLY_HISTOGRAM_MATCHING = False
+
         num_problematic_frames = 0 
         black_frame = np.zeros((self.config.IMG_H, self.config.IMG_W, 3), dtype=np.uint8) # Define black frame once
 
@@ -466,68 +511,11 @@ class LipExtractor:
                             
                             final_resized_lip = cv2.resize(lip_cropped_frame, (self.config.IMG_W, self.config.IMG_H), interpolation=interpolation_method)
                             
-                            processed_lip_frame = final_resized_lip.copy() 
+                            processed_lip_frame = final_resized_lip.copy()
+
+                            if self.config.APPLY_HISTOGRAM_MATCHING and ref_frame is not None:
+                                processed_lip_frame = _histogram_matching(processed_lip_frame, ref_frame)
                             
-                            # --- Apply CLAHE only to the masked lip region within the cropped and resized frame ---
-                            if self.config.APPLY_CLAHE and self.clahe_obj is not None and mp_face_landmarks is not None and smoothed_lip_bbox_np is not None:
-                                mask = np.zeros(processed_lip_frame.shape[:2], dtype=np.uint8) # Grayscale mask
-
-                                x_offset_for_mapping = smoothed_lip_bbox_np[0] 
-                                y_offset_for_mapping = smoothed_lip_bbox_np[1]
-                                
-                                width_cropped_for_mapping = smoothed_lip_bbox_np[2] - smoothed_lip_bbox_np[0]
-                                height_cropped_for_mapping = smoothed_lip_bbox_np[3] - smoothed_lip_bbox_np[1]
-
-                                if width_cropped_for_mapping > 0 and height_cropped_for_mapping > 0:
-                                    scale_x_to_output = self.config.IMG_W / width_cropped_for_mapping
-                                    scale_y_to_output = self.config.IMG_H / height_cropped_for_mapping
-
-                                    lip_points = []
-                                    for lm_idx in LIPS_MESH_LANDMARKS_INDICES:
-                                        if lm_idx < len(mp_face_landmarks.landmark):
-                                            orig_x_px = mp_face_landmarks.landmark[lm_idx].x * original_frame_width
-                                            orig_y_px = mp_face_landmarks.landmark[lm_idx].y * original_frame_height
-                                            
-                                            relative_x_px = orig_x_px - x_offset_for_mapping
-                                            relative_y_px = orig_y_px - y_offset_for_mapping
-
-                                            final_x_lm = int(relative_x_px * scale_x_to_output)
-                                            final_y_lm = int(relative_y_px * scale_y_to_output)
-                                            
-                                            final_x_lm = max(0, min(self.config.IMG_W - 1, final_x_lm))
-                                            final_y_lm = max(0, min(self.config.IMG_H - 1, final_y_lm))
-                                            lip_points.append([final_x_lm, final_y_lm])
-                                    
-                                    if lip_points:
-                                        points_np = np.array(lip_points, np.int32)
-                                        hull = cv2.convexHull(points_np)
-                                        cv2.fillPoly(mask, [hull], 255) 
-                                        final_mask = mask
-                                    else:
-                                        final_mask = np.zeros(processed_lip_frame.shape[:2], dtype=np.uint8) 
-
-                                    ycrcb_image = cv2.cvtColor(processed_lip_frame, cv2.COLOR_RGB2YCrCb)
-                                    y_channel, cr_channel, cb_channel = cv2.split(ycrcb_image)
-                                    
-                                    clahe_y_channel = self.clahe_obj.apply(y_channel)
-
-                                    final_y_channel_after_clahe = np.where(final_mask == 255, clahe_y_channel, y_channel)
-                                    
-                                    merged_ycrcb = cv2.merge([final_y_channel_after_clahe, cr_channel, cb_channel])
-                                    
-                                    processed_lip_frame = cv2.cvtColor(merged_ycrcb, cv2.COLOR_YCrCb2RGB)
-
-                                    if self.config.BLACK_OUT_NON_LIP_AREAS:
-                                        processed_lip_frame[final_mask == 0] = 0
-
-                                    if self.config.SAVE_DEBUG_FRAMES:
-                                        self._debug_frame_processing(processed_lip_frame, frame_idx, 'clahe_applied_masked_lip_frame')
-                                        self._debug_frame_processing(cv2.cvtColor(final_mask, cv2.COLOR_GRAY2BGR), frame_idx, 'lip_mask') 
-                                        if self.config.BLACK_OUT_NON_LIP_AREAS:
-                                            self._debug_frame_processing(processed_lip_frame, frame_idx, 'final_masked_black_background_lip_frame')
-                                else:
-                                    # If width_cropped_for_mapping or height_cropped_for_mapping is not positive
-                                    logger.warning(f"Frame {frame_idx}: Cropped dimensions for mask mapping are invalid. Skipping CLAHE and landmark drawing.")
                                     
                             if self.config.INCLUDE_LANDMARKS_ON_FINAL_OUTPUT and mp_face_landmarks and smoothed_lip_bbox_np is not None:
                                 x_offset_for_mapping = smoothed_lip_bbox_np[0] 
