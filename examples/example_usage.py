@@ -67,7 +67,7 @@ def main():
     logger.info("\n--- Overriding Default Settings for this run ---")
     LipExtractor.config.SAVE_DEBUG_FRAMES = True # Set to True to save debug images
     LipExtractor.config.MAX_DEBUG_FRAMES = 20    # Limit debug frames saved
-    LipExtractor.config.INCLUDE_LANDMARKS_ON_FINAL_OUTPUT = True # Don't draw landmarks on final output
+    LipExtractor.config.INCLUDE_LANDMARKS_ON_FINAL_OUTPUT = False # Don't draw landmarks on final output
     LipExtractor.config.APPLY_CLAHE = True      # Apply illumination normalization
     
     # Configure EMA Smoothing
