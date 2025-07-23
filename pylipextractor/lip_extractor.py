@@ -108,17 +108,6 @@ class LipExtractor:
         self.ema_smoothed_bbox = None # To store the last smoothed bounding box for EMA
         # --- End Changes for EMA Smoothing ---
 
-        # --- GPU Availability Check ---
-        try:
-            import tensorflow as tf
-            gpus = tf.config.list_physical_devices('GPU')
-            if not gpus:
-                logger.info("TensorFlow is installed, but no GPU is available. MediaPipe will run on CPU.")
-            else:
-                logger.info(f"TensorFlow detected {len(gpus)} GPU(s). MediaPipe will attempt to use GPU.")
-        except ImportError:
-            logger.info("TensorFlow is not installed. MediaPipe will run on CPU.")
-
     @classmethod
     def _initialize_mediapipe_if_not_set(cls):
         """
@@ -128,7 +117,7 @@ class LipExtractor:
         if cls._mp_face_mesh_instance is None:
             cls._mp_face_mesh_instance = mp.solutions.face_mesh.FaceMesh(
                 static_image_mode=False,
-                max_num_faces=cls.config.MAX_FACES,
+                max_num_faces=1, # Assume one dominant face in the video
                 min_detection_confidence=0.5,
                 min_tracking_confidence=0.5,
                 refine_landmarks=True # Use refined landmarks for better accuracy
@@ -288,59 +277,22 @@ class LipExtractor:
             logger.error(f"An unexpected error occurred during FFmpeg conversion of '{input_filepath.name}': {e}") 
             return None
 
-    def _skin_tone_white_balance(self, image: np.ndarray, landmarks) -> np.ndarray:
+    def extract_lip_frames(self, video_path: Union[str, Path], output_npy_path: Optional[Union[str, Path]] = None) -> Optional[np.ndarray]:
         """
-        Applies white balance to an image based on the skin tone of the cheeks.
-        """
-        h, w, _ = image.shape
-        # Using cheek landmarks to sample skin tone
-        left_cheek_lm = landmarks.landmark[117]
-        right_cheek_lm = landmarks.landmark[346]
-
-        # Define a small region around the cheek landmarks
-        lx, ly = int(left_cheek_lm.x * w), int(left_cheek_lm.y * h)
-        rx, ry = int(right_cheek_lm.x * w), int(right_cheek_lm.y * h)
-
-        # Create a sample region from both cheeks
-        skin_sample_left = image[ly-5:ly+5, lx-5:lx+5]
-        skin_sample_right = image[ry-5:ry+5, rx-5:rx+5]
-
-        if skin_sample_left.size > 0 and skin_sample_right.size > 0:
-            skin_sample = np.concatenate((skin_sample_left.reshape(-1, 3), skin_sample_right.reshape(-1, 3)), axis=0)
-            
-            if skin_sample.size > 0:
-                # Calculate the average skin tone
-                avg_skin_tone = np.mean(skin_sample, axis=0)
-                
-                # Simple gray world assumption for white balance
-                # We want the average skin tone to be closer to a reference skin tone
-                # For simplicity, we'll just scale the channels to balance them
-                if np.all(avg_skin_tone > 0):
-                    # Calculate scaling factors to make the average color gray
-                    scaling_factors = np.mean(avg_skin_tone) / avg_skin_tone
-                    
-                    # Scale the image channels
-                    balanced_image = np.clip(image * scaling_factors, 0, 255).astype(np.uint8)
-                    return balanced_image
-
-        # If anything fails, return the original image
-        return image
-
-
-    def extract_lip_frames(self, video_path: Union[str, Path], output_npy_path: Optional[Union[str, Path]] = None, target_face_index: Optional[int] = None) -> Optional[List[np.ndarray]]:
-        """
-        Extracts and processes lip frames from a video for one or more faces.
+        Extracst and processes lip frames from a video.
+        Uses PyAV for efficient video reading and MediaPipe for accurate facial landmark detection.
         
         Args:
-            video_path (Union[str, Path]): Path to the input video file.
-            output_npy_path (Union[str, Path], optional): Path to the .npy file. If multiple faces are
-                                                          processed, filenames will be appended with "_face_{i}".
-            target_face_index (int, optional): If specified, only the face with this index will be processed.
-                                               If None, all detected faces (up to `MAX_FACES`) are processed.
+            video_path (Union[str, Path]): Path to the input video file (e.g., MP4, MPG).
+            output_npy_path (Union[str, Path], optional): Path to the .npy file where the extracted
+                                                          lip frames will be saved. If `None`,
+                                                          frames are only returned, not saved.
             
         Returns:
-            Optional[List[np.ndarray]]: A list of NumPy arrays, where each array corresponds to a processed face.
-                                        Returns `None` if an error occurs.
+            Optional[np.ndarray]: A NumPy array of processed lip frames in RGB format
+                                  (shape: NUM_FRAMES x IMG_H x IMG_W x 3).
+                                  Returns `None` if an error occurs during processing or
+                                  if the extracted clip is deemed invalid (e.g., too many problematic frames).
         """
         original_video_path = Path(video_path) 
         current_video_path = original_video_path 
@@ -360,166 +312,309 @@ class LipExtractor:
             logger.error(f"Video file not found at '{current_video_path}'. Processing stopped.") 
             return None
 
+        processed_frames_temp_list = []
         # --- Reset EMA state for each new video ---
         self.ema_smoothed_bbox = None 
 
         try:
-            container = av.open(str(current_video_path))
+            container = av.open(str(current_video_path)) 
         except av.AVError as e:
-            logger.error(f"Error opening video '{current_video_path.name}' with PyAV: {e}. Processing stopped.")
+            logger.error(f"Error opening video '{current_video_path.name}' with PyAV: {e}. Processing stopped.") 
             return None
 
         if not container.streams.video:
-            logger.error(f"No video stream found in '{current_video_path.name}'. Processing stopped.")
+            logger.error(f"No video stream found in '{current_video_path.name}'. Processing stopped.") 
             container.close()
             return None
-
+            
         video_stream = container.streams.video[0]
-        total_frames = video_stream.frames if video_stream.frames > 0 else float('inf')
-        
-        all_face_frames = []
-        num_faces_to_process = 0
 
-        # Peek at the first frame to determine the number of faces
-        try:
-            first_frame_av = next(container.decode(video=0))
-            first_image_rgb = first_frame_av.to_rgb().to_ndarray()
-            results = self.mp_face_mesh.process(first_image_rgb)
-            num_faces_to_process = len(results.multi_face_landmarks) if results.multi_face_landmarks else 0
-            
-            if target_face_index is not None:
-                if target_face_index >= num_faces_to_process:
-                    logger.error(f"target_face_index ({target_face_index}) is out of range. Detected {num_faces_to_process} faces.")
-                    return None
-                num_faces_to_process = 1 # Only process one face
-            
-            all_face_frames = [[] for _ in range(num_faces_to_process)]
-            container.seek(0) # Reset stream to the beginning
-        except (StopIteration, av.AVError):
-            logger.error(f"Could not read the first frame of '{current_video_path.name}'.")
-            return None
+        # Determine the total number of frames to process
+        total_frames_to_process = self.config.MAX_FRAMES
+        if total_frames_to_process is None:
+            try:
+                frames_from_av = video_stream.frames
+                if frames_from_av is not None and frames_from_av > 0:
+                    total_frames_to_process = frames_from_av
+                else:
+                    total_frames_to_process = float('inf') 
+            except Exception:
+                total_frames_to_process = float('inf') 
 
-        if num_faces_to_process == 0:
-            logger.warning(f"No faces detected in '{current_video_path.name}'.")
-            return None
+        logger.info(f"Processing video: '{current_video_path.name}' ({total_frames_to_process if total_frames_to_process != float('inf') else 'all available'} frames)...") 
 
-        logger.info(f"Processing video: '{current_video_path.name}' for {num_faces_to_process} face(s)...")
+        # --- Get reference frame for histogram matching ---
+        ref_frame = None
+        if self.config.APPLY_HISTOGRAM_MATCHING:
+            try:
+                container.seek(int(container.duration / 2))
+                ref_frame_av = next(container.decode(video=0))
+                ref_frame = ref_frame_av.to_rgb().to_ndarray()
+                container.seek(0)
+            except (StopIteration, av.AVError):
+                logger.warning("Could not get reference frame for histogram matching. Histogram matching will be disabled.")
+                self.config.APPLY_HISTOGRAM_MATCHING = False
 
-        black_frame = np.zeros((self.config.IMG_H, self.config.IMG_W, 3), dtype=np.uint8)
-        
+        num_problematic_frames = 0 
+        black_frame = np.zeros((self.config.IMG_H, self.config.IMG_W, 3), dtype=np.uint8) # Define black frame once
+
         try:
             for frame_idx, frame_av in enumerate(container.decode(video=0)):
-                if self.config.MAX_FRAMES is not None and frame_idx >= self.config.MAX_FRAMES:
-                    break
+                if total_frames_to_process != float('inf') and frame_idx >= total_frames_to_process:
+                    logger.debug(f"Max frames limit ({total_frames_to_process}) reached. Stopping video processing.") 
+                    break 
 
-                image_rgb = frame_av.to_rgb().to_ndarray()
-                original_frame_height, original_frame_width, _ = image_rgb.shape
-                
-                results = self.mp_face_mesh.process(image_rgb)
+                current_frame_is_problematic = False
+                processed_lip_frame = black_frame.copy() # Initialize with a black frame, will be overwritten if successful
 
-                processed_faces_in_frame = 0
-                for face_idx, mp_face_landmarks in enumerate(results.multi_face_landmarks or []):
-                    if target_face_index is not None and face_idx != target_face_index:
-                        continue
+                try:
+                    image_rgb = frame_av.to_rgb().to_ndarray()
+                    original_frame_height, original_frame_width, _ = image_rgb.shape
 
-                    # Process this face
-                    # (The entire logic of rotation, cropping, etc. would be here)
-                    # For brevity, I am abstracting this complex logic into a placeholder call.
-                    # A real implementation would refactor the single-face processing logic
-                    # into a helper method that accepts `image_rgb` and `mp_face_landmarks`.
+                    if self.config.SAVE_DEBUG_FRAMES:
+                        self._debug_frame_processing(image_rgb, frame_idx, 'original')
                     
-                    # Placeholder for the complex processing logic for a single face
-                    processed_lip_frame = self._process_single_face(image_rgb, mp_face_landmarks, frame_idx)
+                    results = self.mp_face_mesh.process(image_rgb) 
+                    
+                    raw_lip_bbox: Optional[np.ndarray] = None 
+                    mp_face_landmarks = None 
+                    
+                    if results.multi_face_landmarks:
+                        mp_face_landmarks = results.multi_face_landmarks[0]
+                        landmarks = mp_face_landmarks.landmark
 
-                    current_list_idx = face_idx
-                    if target_face_index is not None:
-                        current_list_idx = 0 # If targeting a specific face, it's always the first in our list
+                        lip_x_coords = []
+                        lip_y_coords = []
+                        for idx in LIPS_MESH_LANDMARKS_INDICES:
+                            if idx < len(landmarks): 
+                                lip_x_coords.append(landmarks[idx].x * original_frame_width)
+                                lip_y_coords.append(landmarks[idx].y * original_frame_height)
 
-                    if processed_lip_frame is not None:
-                        all_face_frames[current_list_idx].append(processed_lip_frame)
+                        if lip_x_coords and lip_y_coords:
+                            min_y_tight = landmarks[NOSE_BOTTOM_LANDMARK_INDEX].y * original_frame_height
+                            max_y_tight = landmarks[CHIN_BOTTOM_LANDMARK_INDEX].y * original_frame_height
+                            min_x_tight = np.min(lip_x_coords)
+                            max_x_tight = np.max(lip_x_coords)
+
+                            # Calculate the centroid of the tight lip region
+                            lip_centroid_x = (min_x_tight + max_x_tight) / 2
+                            lip_centroid_y = (min_y_tight + max_y_tight) / 2
+
+                            # Calculate desired bounding box dimensions based on proportional margins and fixed padding
+                            initial_tight_width = max_x_tight - min_x_tight
+                            initial_tight_height = max_y_tight - min_y_tight
+
+                            # Determine the target size of the bounding box including margins and padding
+                            target_bbox_width = initial_tight_width * (1 + 2 * self.config.LIP_PROPORTIONAL_MARGIN_X) + \
+                                                self.config.LIP_PADDING_LEFT_PX + self.config.LIP_PADDING_RIGHT_PX
+                            target_bbox_height = initial_tight_height * (1 + 2 * self.config.LIP_PROPORTIONAL_MARGIN_Y) + \
+                                                 self.config.LIP_PADDING_TOP_PX + self.config.LIP_PADDING_BOTTOM_PX
+
+                            # Adjust target_bbox_width/height to maintain the target aspect ratio (IMG_W / IMG_H)
+                            # This ensures the cropped region has the correct aspect ratio *before* resizing to IMG_W x IMG_H
+                            target_aspect_ratio = self.config.IMG_W / self.config.IMG_H
+
+                            current_bbox_aspect_ratio = target_bbox_width / target_bbox_height
+
+                            if current_bbox_aspect_ratio > target_aspect_ratio:
+                                # Bounding box is wider than target aspect ratio, increase height
+                                target_bbox_height = target_bbox_width / target_aspect_ratio
+                            else:
+                                # Bounding box is taller or equal, increase width
+                                target_bbox_width = target_bbox_height * target_aspect_ratio
+
+                            # Calculate proposed bounding box coordinates centered around the lip centroid
+                            x1_proposed = lip_centroid_x - target_bbox_width / 2
+                            y1_proposed = lip_centroid_y - target_bbox_height / 2
+                            x2_proposed = lip_centroid_x + target_bbox_width / 2
+                            y2_proposed = lip_centroid_y + target_bbox_height / 2
+
+                            # Clamp coordinates to frame boundaries and adjust to maintain size if possible
+                            x1_final = int(x1_proposed)
+                            y1_final = int(y1_proposed)
+                            x2_final = int(x2_proposed)
+                            y2_final = int(y2_proposed)
+
+                            # Shift box if it goes out of bounds
+                            if x1_final < 0:
+                                x2_final += abs(x1_final)
+                                x1_final = 0
+                            if y1_final < 0:
+                                y2_final += abs(y1_final)
+                                y1_final = 0
+                            if x2_final > original_frame_width:
+                                x1_final -= (x2_final - original_frame_width)
+                                x2_final = original_frame_width
+                            if y2_final > original_frame_height:
+                                y1_final -= (y2_final - original_frame_height)
+                                y2_final = original_frame_height
+
+                            # Final clamping (important after shifts to ensure values are within limits)
+                            x1_final = max(0, min(original_frame_width, x1_final))
+                            y1_final = max(0, min(original_frame_height, y1_final))
+                            x2_final = max(0, min(original_frame_width, x2_final))
+                            y2_final = max(0, min(original_frame_height, y2_final))
+
+                            # Ensure the final box has positive dimensions
+                            if (x2_final - x1_final) > 0 and (y2_final - y1_final) > 0:
+                                raw_lip_bbox = np.array([x1_final, y1_final, x2_final, y2_final], dtype=np.int32)
+                            else:
+                                logger.warning(f"Frame {frame_idx}: Calculated final bounding box has zero or negative dimensions after centering/adjustment. Marking as problematic.") 
+                                current_frame_is_problematic = True
+                        else:
+                            logger.warning(f"Frame {frame_idx}: No lip coordinates found. Marking as problematic.") 
+                            current_frame_is_problematic = True
                     else:
-                        all_face_frames[current_list_idx].append(black_frame.copy())
-                    
-                    processed_faces_in_frame += 1
+                        logger.warning(f"Frame {frame_idx}: No face detected. Marking as problematic.") 
+                        current_frame_is_problematic = True
 
-                # If some faces were not detected in this frame, add black frames for them
-                while len(all_face_frames) > 0 and len(all_face_frames[0]) < frame_idx + 1:
-                    for i in range(num_faces_to_process):
-                         all_face_frames[i].append(black_frame.copy())
+                    # --- Apply temporal smoothing using EMA if enabled ---
+                    smoothed_lip_bbox_np = None
+                    if self.config.APPLY_EMA_SMOOTHING:
+                        smoothed_lip_bbox_np = self._apply_ema_smoothing(raw_lip_bbox)
+                    else:
+                        smoothed_lip_bbox_np = raw_lip_bbox # Use raw if EMA is off
+
+                    # Save debug frames if enabled
+                    if self.config.SAVE_DEBUG_FRAMES:
+                        self._debug_frame_processing(image_rgb, frame_idx, 'landmarks', raw_lip_bbox.tolist() if raw_lip_bbox is not None else None, mp_face_landmarks)
+                        if self.config.APPLY_EMA_SMOOTHING:
+                            self._debug_frame_processing(image_rgb, frame_idx, 'smoothed_bbox', smoothed_lip_bbox_np.tolist() if smoothed_lip_bbox_np is not None else None, mp_face_landmarks)
+
+                    # Crop and resize the frame using the smoothed bounding box
+                    if not current_frame_is_problematic and smoothed_lip_bbox_np is not None and \
+                       (smoothed_lip_bbox_np[2] > smoothed_lip_bbox_np[0]) and \
+                       (smoothed_lip_bbox_np[3] > smoothed_lip_bbox_np[1]):
+                        
+                        x1_smoothed, y1_smoothed, x2_smoothed, y2_smoothed = smoothed_lip_bbox_np.tolist()
+                        
+                        # Ensure coordinates are within original frame bounds before cropping
+                        x1_smoothed = max(0, min(original_frame_width, x1_smoothed))
+                        y1_smoothed = max(0, min(original_frame_height, y1_smoothed))
+                        x2_smoothed = max(0, min(original_frame_width, x2_smoothed))
+                        y2_smoothed = max(0, min(original_frame_height, y2_smoothed))
+
+                        # Re-check dimensions after clamping
+                        if (x2_smoothed - x1_smoothed) <= 0 or (y2_smoothed - y1_smoothed) <= 0:
+                            logger.warning(f"Frame {frame_idx}: Smoothed bounding box became invalid after clamping. Marking as problematic.")
+                            current_frame_is_problematic = True
+                        else:
+                            lip_cropped_frame = image_rgb[y1_smoothed:y2_smoothed, x1_smoothed:x2_smoothed]
+                            
+                            current_crop_width = lip_cropped_frame.shape[1]
+                            current_crop_height = lip_cropped_frame.shape[0]
+
+                            if current_crop_width > self.config.IMG_W or current_crop_height > self.config.IMG_H:
+                                interpolation_method = cv2.INTER_AREA
+                            else:
+                                interpolation_method = cv2.INTER_LANCZOS4 
+                            
+                            final_resized_lip = cv2.resize(lip_cropped_frame, (self.config.IMG_W, self.config.IMG_H), interpolation=interpolation_method)
+                            
+                            processed_lip_frame = final_resized_lip.copy()
+
+                            if self.config.APPLY_HISTOGRAM_MATCHING and ref_frame is not None:
+                                processed_lip_frame = _histogram_matching(processed_lip_frame, ref_frame)
+                            
+                                    
+                            if self.config.INCLUDE_LANDMARKS_ON_FINAL_OUTPUT and mp_face_landmarks and smoothed_lip_bbox_np is not None:
+                                x_offset_for_mapping = smoothed_lip_bbox_np[0] 
+                                y_offset_for_mapping = smoothed_lip_bbox_np[1]
+                                
+                                width_cropped_for_mapping = smoothed_lip_bbox_np[2] - smoothed_lip_bbox_np[0]
+                                height_cropped_for_mapping = smoothed_lip_bbox_np[3] - smoothed_lip_bbox_np[1]
+
+                                if width_cropped_for_mapping > 0 and height_cropped_for_mapping > 0:
+                                    scale_x_to_output = self.config.IMG_W / width_cropped_for_mapping
+                                    scale_y_to_output = self.config.IMG_H / height_cropped_for_mapping
+
+                                    for lm_idx in LIPS_MESH_LANDMARKS_INDICES:
+                                        if lm_idx < len(mp_face_landmarks.landmark):
+                                            orig_x_px = mp_face_landmarks.landmark[lm_idx].x * original_frame_width
+                                            orig_y_px = mp_face_landmarks.landmark[lm_idx].y * original_frame_height
+                                            
+                                            relative_x_px = orig_x_px - x_offset_for_mapping
+                                            relative_y_px = orig_y_px - y_offset_for_mapping
+
+                                            final_x_lm = int(relative_x_px * scale_x_to_output)
+                                            final_y_lm = int(relative_y_px * scale_y_to_output)
+                                            
+                                            final_x_lm = max(0, min(self.config.IMG_W - 1, final_x_lm))
+                                            final_y_lm = max(0, min(self.config.IMG_H - 1, final_y_lm))
+                                            
+                                            cv2.circle(processed_lip_frame, (final_x_lm, final_y_lm), 1, (0, 255, 0), -1) 
+                                else:
+                                    logger.warning(f"Frame {frame_idx}: Cropped dimensions for landmark mapping are invalid. Skipping landmark drawing.")
+                            
+                    else: # This block is for when current_frame_is_problematic is True or smoothed_lip_bbox_np is invalid.
+                        logger.warning(f"Frame {frame_idx}: Problematic frame (face/lip detection failed or invalid bounding box). Appending black frame.")
+                        current_frame_is_problematic = True # Ensure it's marked problematic
+
+                except Exception as e:
+                    logger.warning(f"Unexpected error processing frame {frame_idx} from '{current_video_path.name}': {e}. Appending black frame.") 
+                    current_frame_is_problematic = True 
+                    if self.config.APPLY_EMA_SMOOTHING:
+                        self._apply_ema_smoothing(None) # Pass None to EMA to maintain continuity or drift
+
+                if current_frame_is_problematic:
+                    processed_frames_temp_list.append(black_frame.copy())
+                    num_problematic_frames += 1 
+                    if self.config.SAVE_DEBUG_FRAMES:
+                        self._debug_frame_processing(black_frame, frame_idx, 'black_generated')
+                else:
+                    processed_frames_temp_list.append(processed_lip_frame)
 
 
         finally:
             container.close()
+            # --- NEW: Cleanup temporary MP4 file if it was created ---
+            if converted_temp_mp4_path and converted_temp_mp4_path.exists():
+                try:
+                    os.remove(str(converted_temp_mp4_path))
+                    logger.info(f"Cleaned up temporary MP4 file: '{converted_temp_mp4_path.name}'.") 
+                except Exception as e:
+                    logger.warning(f"Could not remove temporary MP4 file '{converted_temp_mp4_path.name}': {e}") 
 
-        final_results = []
-        for i, face_frames in enumerate(all_face_frames):
-            final_processed_np_frames = np.array(face_frames, dtype=np.uint8)
-            
-            # (Problematic frame check and padding logic would be here for each face)
-            
-            if output_npy_path:
-                output_path = Path(output_npy_path)
-                if num_faces_to_process > 1:
-                    # Append face index to filename if multiple faces are processed
-                    save_path = output_path.parent / f"{output_path.stem}_face_{i}{output_path.suffix}"
-                else:
-                    save_path = output_path
-                
-                save_path.parent.mkdir(parents=True, exist_ok=True)
-                np.save(save_path, final_processed_np_frames)
-                logger.info(f"Extracted frames for face {i} saved to '{save_path}'.")
-
-            final_results.append(final_processed_np_frames)
-
-        return final_results
-
-    def _process_single_face(self, image_rgb: np.ndarray, mp_face_landmarks, frame_idx: int) -> Optional[np.ndarray]:
-        """
-        Processes a single face in a frame to extract the lip region.
-        This method contains the logic for rotation, cropping, and normalization.
-        """
-        original_frame_height, original_frame_width, _ = image_rgb.shape
-        landmarks = mp_face_landmarks.landmark
-        
-        # (The entire logic from the old `extract_lip_frames` for processing
-        # a single face would be placed here. This includes:
-        # - Rotated bounding box calculation
-        # - EMA smoothing (with state managed per-face if needed)
-        # - Cropping and resizing
-        # - Histogram matching
-        # - Masking
-        # - Landmark drawing)
-        
-        # This is a simplified placeholder for the full logic.
-        try:
-            # --- Rotated Bounding Box Calculation ---
-            left_lip_corner = landmarks[61]
-            right_lip_corner = landmarks[291]
-            left_x, left_y = left_lip_corner.x * original_frame_width, left_lip_corner.y * original_frame_height
-            right_x, right_y = right_lip_corner.x * original_frame_width, right_lip_corner.y * original_frame_height
-            angle = np.degrees(np.arctan2(right_y - left_y, right_x - left_x))
-            lip_center_x = (left_x + right_x) / 2
-            lip_center_y = (left_y + right_y) / 2
-            rotation_matrix = cv2.getRotationMatrix2D((lip_center_x, lip_center_y), angle, 1.0)
-            cos_angle = np.abs(rotation_matrix[0, 0])
-            sin_angle = np.abs(rotation_matrix[0, 1])
-            new_width = int((original_frame_height * sin_angle) + (original_frame_width * cos_angle))
-            new_height = int((original_frame_height * cos_angle) + (original_frame_width * sin_angle))
-            rotation_matrix[0, 2] += (new_width / 2) - lip_center_x
-            rotation_matrix[1, 2] += (new_height / 2) - lip_center_y
-            rotated_image = cv2.warpAffine(image_rgb, rotation_matrix, (new_width, new_height))
-
-            # --- Recalculate BBox in Rotated Image ---
-            # (Simplified for brevity, full logic would be here)
-            # This part needs to be carefully implemented as in the original logic.
-            # For this example, we'll just return a dummy crop.
-            final_resized_lip = cv2.resize(rotated_image, (self.config.IMG_W, self.config.IMG_H))
-            return final_resized_lip
-
-        except Exception as e:
-            logger.warning(f"Error processing face in frame {frame_idx}: {e}")
+        if not processed_frames_temp_list:
+            logger.warning(f"No frames could be processed from video '{current_video_path.name}'. Returning `None`.") 
             return None
 
+        final_processed_np_frames = np.array(processed_frames_temp_list, dtype=np.uint8)
+
+        # Apply MAX_FRAMES limit if specified
+        if self.config.MAX_FRAMES is not None:
+            if final_processed_np_frames.shape[0] > self.config.MAX_FRAMES:
+                # If we processed more frames than MAX_FRAMES, truncate
+                final_processed_np_frames = final_processed_np_frames[:self.config.MAX_FRAMES]
+                logger.info(f"Video truncated to {self.config.MAX_FRAMES} frames as per configuration.") 
+            elif final_processed_np_frames.shape[0] < self.config.MAX_FRAMES:
+                # If we processed fewer frames, pad with black frames
+                padding_needed = self.config.MAX_FRAMES - final_processed_np_frames.shape[0]
+                black_padding = np.zeros((padding_needed, self.config.IMG_H, self.config.IMG_W, 3), dtype=np.uint8)
+                final_processed_np_frames = np.concatenate((final_processed_np_frames, black_padding), axis=0)
+                num_problematic_frames += padding_needed # Account for padded black frames as problematic
+                logger.info(f"Video padded with {padding_needed} black frames to reach {self.config.MAX_FRAMES} frames as per configuration.") 
+
+
+        total_output_frames = final_processed_np_frames.shape[0]
+        
+        # Final check on problematic frames percentage
+        if total_output_frames == 0 or (total_output_frames > 0 and (num_problematic_frames / total_output_frames) * 100 > self.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE): 
+            percentage_problematic_frames = (num_problematic_frames / total_output_frames) * 100 if total_output_frames > 0 else 100
+            logger.error(f"Clip '{original_video_path.name}' rejected: {percentage_problematic_frames:.2f}% problematic frames (exceeds {self.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE}% allowed). Returning None.") 
+            return None
+        elif num_problematic_frames > 0:
+            percentage_problematic_frames = (num_problematic_frames / total_output_frames) * 100
+            logger.info(f"Clip '{original_video_path.name}': {percentage_problematic_frames:.2f}% problematic frames found. Clip retained.") 
+        
+        # Save to .npy file if a path is provided
+        if output_npy_path:
+            output_npy_path = Path(output_npy_path)
+            output_npy_path.parent.mkdir(parents=True, exist_ok=True) 
+            np.save(output_npy_path, final_processed_np_frames)
+            logger.info(f"Extracted frames saved to '{output_npy_path}'.") 
+
+        return final_processed_np_frames
 
     @staticmethod
     def extract_npy(npy_path: Union[str, Path]) -> Optional[np.ndarray]:
@@ -543,55 +638,4 @@ class LipExtractor:
             return data
         except Exception as e:
             logger.error(f"Error loading NPY file '{npy_path}': {e}") 
-            return None
-
-    def extract_lip_frames_from_videos(self, video_paths: List[Union[str, Path]], output_dir: Union[str, Path]):
-        """
-        Processes multiple videos in parallel using multiprocessing.
-        
-        Args:
-            video_paths (List[Union[str, Path]]): A list of paths to video files.
-            output_dir (Union[str, Path]): The directory where the output .npy files will be saved.
-        """
-        from multiprocessing import Pool, cpu_count
-        from functools import partial
-
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        num_cores = self.config.NUM_CPU_CORES
-        if num_cores > cpu_count():
-            logger.warning(f"NUM_CPU_CORES ({num_cores}) is greater than the number of available CPUs ({cpu_count()}). Using {cpu_count()} cores.")
-            num_cores = cpu_count()
-        
-        logger.info(f"Starting parallel processing of {len(video_paths)} videos using {num_cores} cores.")
-
-        # Use a partial function to pass the output directory to the processing function
-        process_func = partial(self._process_single_video, output_dir=output_dir)
-
-        with Pool(processes=num_cores) as pool:
-            results = pool.map(process_func, video_paths)
-
-        successful_extractions = [res for res in results if res is not None]
-        logger.info(f"Finished parallel processing. Successfully extracted {len(successful_extractions)} out of {len(video_paths)} videos.")
-        return successful_extractions
-
-    def _process_single_video(self, video_path: Union[str, Path], output_dir: Path) -> Optional[Path]:
-        """
-        A helper function to process a single video. This function is designed
-        to be called by the parallel processing pool.
-        """
-        try:
-            video_path = Path(video_path)
-            output_npy_path = output_dir / f"{video_path.stem}.npy"
-            
-            # Each process needs its own LipExtractor instance
-            extractor = LipExtractor()
-            lip_frames = extractor.extract_lip_frames(video_path, output_npy_path)
-            
-            if lip_frames is not None:
-                return output_npy_path
-            return None
-        except Exception as e:
-            logger.error(f"Error processing video {video_path}: {e}")
             return None
