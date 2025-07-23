@@ -31,13 +31,13 @@ class LipExtractionConfig:
 
     # Removed: SMOOTHING_WINDOW_SIZE is replaced by EMA_ALPHA for EMA smoothing
     # New: EMA Smoothing for Bounding Boxes
-    APPLY_EMA_SMOOTHING: bool = True # Set to True to apply EMA smoothing to bounding box coordinates
+    APPLY_EMA_SMOOTHING: bool = False # Set to True to apply EMA smoothing to bounding box coordinates
     EMA_ALPHA: float = 0.2 # EMA smoothing factor (0.0 to 1.0, higher means less smoothing, 1.0 means no smoothing)
 
     # --- Debugging & Output Customization Settings ---
     DEBUG_OUTPUT_DIR = Path("./lip_extraction_debug") # Directory to save debug frames
     MAX_DEBUG_FRAMES = 20 # Maximum number of debug frames to save per video.
-    SAVE_DEBUG_FRAMES = True # Set to True to save intermediate debug frames.
+    SAVE_DEBUG_FRAMES = False # Set to True to save intermediate debug frames.
     
     # If True, MediaPipe lip landmarks will be drawn on the final extracted lip frames
     # (i.e., the frames saved in the .npy file and later converted to images).
@@ -45,7 +45,7 @@ class LipExtractionConfig:
     INCLUDE_LANDMARKS_ON_FINAL_OUTPUT = False
 
     # --- Illumination and Contrast Normalization Settings (CLAHE) ---
-    APPLY_CLAHE = True  # Set to True to apply CLAHE for illumination/contrast normalization
+    APPLY_CLAHE = False  # Set to True to apply CLAHE for illumination/contrast normalization
     CLAHE_CLIP_LIMIT = 0.3  # Threshold for contrast limiting (recommended: 1.0-4.0)
     CLAHE_TILE_GRID_SIZE = (2, 2) # Size of grid for histogram equalization (e.g., (8,8) or (16,16))
 
@@ -55,7 +55,7 @@ class LipExtractionConfig:
     BLACK_OUT_NON_LIP_AREAS = False
 
     # --- New FFmpeg Conversion Options ---
-    CONVERT_TO_MP4_IF_NEEDED: bool = False  # Set to True to enable automatic conversion
+    CONVERT_TO_MP4_IF_NEEDED: bool = True  # Set to True to enable automatic conversion
     MP4_TEMP_DIR: Path = Path("temp_mp4_conversions") # Directory for temporary MP4 files
     # --- End New FFmpeg Conversion Options ---
 

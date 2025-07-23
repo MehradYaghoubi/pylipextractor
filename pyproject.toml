@@ -1,6 +1,6 @@
 [project]
 name = "pylipextractor"
-version = "2.0.1"
+version = "2.1.0"
 description = "A Python package for robust lip frame extraction from videos using MediaPipe, featuring enhanced stability, configurable options, and optional video format conversion for VSR tasks."
 readme = "README.md"
 authors = [

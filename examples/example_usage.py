@@ -4,211 +4,131 @@ import sys
 from pathlib import Path
 import numpy as np
 import shutil
-import cv2 # Import OpenCV for displaying an image or saving them easily
-import logging # Import the logging module
+import logging
 import os
 
+# Set environment variables to reduce TensorFlow and MediaPipe logging verbosity
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 os.environ['GLOG_minloglevel'] = '2'
-# Configure logging at the beginning of the script for example purposes.
-# In a larger application, this might be done in a separate utility or entry point.
-# Set level to INFO to see general progress, or DEBUG to see more detailed internal messages.
-# INFO, WARNING, ERROR, CRITICAL
-logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-# Get a logger for this specific module
+
+# Configure basic logging for the script
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Ensure the project root is in sys.path when running this script directly
-# This allows importing 'pylipextractor' as a package.
-# This specific line is mainly for local development/testing of the example script itself.
-# When pylipexractor is installed via pip, this line is not strictly needed.
-project_root = Path(__file__).resolve().parent.parent # Adjust if example_usage.py is not directly in examples/
+# Add the project root to sys.path to allow importing 'pylipextractor'
+# This is mainly for local development. It's not needed if the package is installed via pip.
+project_root = Path(__file__).resolve().parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from pylipextractor.lip_extractor import LipExtractor
 
 def print_section_header(title):
-    """Prints a formatted header for a section to the console (always visible)."""
-    # Keeping this as print for clear visual separation in the console output,
-    # as these are high-level structural markers for the example.
+    """Prints a formatted header for a section to the console."""
     print(f"\n{'='*50}\n{title}\n{'='*50}", flush=True)
 
 def main():
     """
-    Comprehensive example demonstrating various functionalities of pylipexractor.
-    This script covers configuration, extraction, and post-processing steps.
+    A comprehensive example demonstrating various functionalities of PyLipExtractor.
     """
-    logger.info("Welcome to the pylipextractor example!")
+    logger.info("Welcome to the comprehensive PyLipExtractor example!")
 
-    # --- Section 1: Configuration Overview and Customization ---
-    print_section_header("1. Configuration Overview")
-
-    logger.info("Default configurations are loaded from pylipextractor/config.py.")
-    logger.info("You can inspect and override them directly via LipExtractor.config.")
-
-    logger.info(f"Current default IMG_H: {LipExtractor.config.IMG_H}")
-    logger.info(f"Current default IMG_W: {LipExtractor.config.IMG_W}")
-    logger.info(f"Current default SAVE_DEBUG_FRAMES: {LipExtractor.config.SAVE_DEBUG_FRAMES}")
-    logger.info(f"Current default APPLY_CLAHE: {LipExtractor.config.APPLY_CLAHE}")
+    # --- Section 1: Comprehensive Configuration ---
+    print_section_header("1. Comprehensive Configuration")
     
-    # Show new config options for EMA
-    logger.info(f"Current default APPLY_EMA_SMOOTHING: {LipExtractor.config.APPLY_EMA_SMOOTHING}")
-    logger.info(f"Current default EMA_ALPHA: {LipExtractor.config.EMA_ALPHA}")
-
-    logger.info(f"Current default CONVERT_TO_MP4_IF_NEEDED: {LipExtractor.config.CONVERT_TO_MP4_IF_NEEDED}")
-    logger.info(f"Current default MAX_PROBLEMATIC_FRAMES_PERCENTAGE: {LipExtractor.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE}")
+    # You can override default settings before creating a LipExtractor instance.
+    # Here, we'll configure several options to showcase the package's flexibility.
     
-    # Show new config option for blacking out non-lip areas
-    logger.info(f"Current default BLACK_OUT_NON_LIP_AREAS: {LipExtractor.config.BLACK_OUT_NON_LIP_AREAS}")
-
-
-    # Example: Override some default settings for this specific run
-    logger.info("\n--- Overriding Default Settings for this run ---")
-    LipExtractor.config.SAVE_DEBUG_FRAMES = True # Set to True to save debug images
-    LipExtractor.config.MAX_DEBUG_FRAMES = 20    # Limit debug frames saved
-    LipExtractor.config.INCLUDE_LANDMARKS_ON_FINAL_OUTPUT = False # Don't draw landmarks on final output
-    LipExtractor.config.APPLY_CLAHE = True      # Apply illumination normalization
+    logger.info("Overriding default settings for a customized extraction...")
     
-    # Configure EMA Smoothing
-    LipExtractor.config.APPLY_EMA_SMOOTHING = True # Enable EMA smoothing
-    LipExtractor.config.EMA_ALPHA = 0.2            # Set EMA smoothing factor (e.g., 0.2 for more smoothing)
-
-    # Enable optional MP4 conversion for input videos that are not already MP4
-    # This is highly recommended for MPG files or other problematic formats.
-    LipExtractor.config.CONVERT_TO_MP4_IF_NEEDED = True
-    LipExtractor.config.MP4_TEMP_DIR = Path("./temp_converted_mp4s") # Directory for temporary converted files
-
-    # Adjust the threshold for rejecting a video based on problematic frames
-    # If more than this percentage of frames are black/undecipherable, the entire video will be rejected.
-    LipExtractor.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE = 10.0 # Example: Allow up to 10% problematic frames
+    # --- General Settings ---
+    LipExtractor.config.IMG_H = 60  # Set output frame height
+    LipExtractor.config.IMG_W = 90  # Set output frame width
     
-    # NEW: Enable/Disable blacking out non-lip areas. Set to True to see the effect.
-    LipExtractor.config.BLACK_OUT_NON_LIP_AREAS = False
+    # --- Feature Toggles ---
+    LipExtractor.config.APPLY_CLAHE = True  # Enable illumination normalization
+    LipExtractor.config.APPLY_EMA_SMOOTHING = True  # Enable temporal smoothing
+    LipExtractor.config.CONVERT_TO_MP4_IF_NEEDED = True  # Enable automatic video conversion
+    LipExtractor.config.BLACK_OUT_NON_LIP_AREAS = False # Black out areas outside the lip region
     
-    LipExtractor.config.IMG_H = 50              # Uncomment to change output height
-    LipExtractor.config.IMG_W = 70             # Uncomment to change output width
-    LipExtractor.config.LIP_PROPORTIONAL_MARGIN_X = 0.0 # Adjust horizontal margin
-    LipExtractor.config.LIP_PROPORTIONAL_MARGIN_Y = 0.02 # Adjust vertical margin
-    # LipExtractor.config.MAX_FRAMES = 100        # Uncomment to limit the total number of frames processed
-
-    logger.info(f"New SAVE_DEBUG_FRAMES setting: {LipExtractor.config.SAVE_DEBUG_FRAMES}")
-    logger.info(f"New MAX_DEBUG_FRAMES setting: {LipExtractor.config.MAX_DEBUG_FRAMES}")
-    logger.info(f"New INCLUDE_LANDMARKS_ON_FINAL_OUTPUT setting: {LipExtractor.config.INCLUDE_LANDMARKS_ON_FINAL_OUTPUT}")
-    logger.info(f"New APPLY_CLAHE setting: {LipExtractor.config.APPLY_CLAHE}")
+    # --- Fine-Tuning Parameters ---
+    LipExtractor.config.EMA_ALPHA = 0.3  # Set smoothing factor (lower is smoother)
+    LipExtractor.config.LIP_PROPORTIONAL_MARGIN_X = 0.1  # Add horizontal margin around lips
+    LipExtractor.config.LIP_PROPORTIONAL_MARGIN_Y = 0.2  # Add vertical margin around lips
     
-    # Log new EMA settings
-    logger.info(f"New APPLY_EMA_SMOOTHING setting: {LipExtractor.config.APPLY_EMA_SMOOTHING}")
-    logger.info(f"New EMA_ALPHA setting: {LipExtractor.config.EMA_ALPHA}")
-
-    logger.info(f"New CONVERT_TO_MP4_IF_NEEDED setting: {LipExtractor.config.CONVERT_TO_MP4_IF_NEEDED}")
-    logger.info(f"New MP4_TEMP_DIR setting: {LipExtractor.config.MP4_TEMP_DIR}")
-    logger.info(f"New MAX_PROBLEMATIC_FRAMES_PERCENTAGE setting: {LipExtractor.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE}")
+    # --- Debugging and Quality Control ---
+    LipExtractor.config.SAVE_DEBUG_FRAMES = True  # Save intermediate frames for inspection
+    LipExtractor.config.MAX_DEBUG_FRAMES = 50  # Limit the number of saved debug frames
+    LipExtractor.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE = 20.0  # Reject videos with >20% problematic frames
     
-    # Log new BLACK_OUT_NON_LIP_AREAS setting
-    logger.info(f"New BLACK_OUT_NON_LIP_AREAS setting: {LipExtractor.config.BLACK_OUT_NON_LIP_AREAS}")
+    logger.info(f"Custom configuration applied.")
+    logger.info(f"  - Output dimensions: {LipExtractor.config.IMG_H}x{LipExtractor.config.IMG_W}")
+    logger.info(f"  - CLAHE: {LipExtractor.config.APPLY_CLAHE}, Smoothing: {LipExtractor.config.APPLY_EMA_SMOOTHING} (alpha={LipExtractor.config.EMA_ALPHA})")
+    logger.info(f"  - Debug frames: {LipExtractor.config.SAVE_DEBUG_FRAMES}, Blackout: {LipExtractor.config.BLACK_OUT_NON_LIP_AREAS}")
 
-
-    # Clear previous debug directory if saving debug frames is enabled
-    if LipExtractor.config.SAVE_DEBUG_FRAMES and LipExtractor.config.DEBUG_OUTPUT_DIR.exists():
-        try:
-            shutil.rmtree(LipExtractor.config.DEBUG_OUTPUT_DIR)
-            logger.info(f"\nDebug directory '{LipExtractor.config.DEBUG_OUTPUT_DIR}' cleared for a fresh run.")
-        except OSError as e:
-            logger.warning(f"Could not clear debug directory '{LipExtractor.config.DEBUG_OUTPUT_DIR}': {e}")
-
-    # Clear temporary MP4 directory if conversion is enabled
-    if LipExtractor.config.CONVERT_TO_MP4_IF_NEEDED and LipExtractor.config.MP4_TEMP_DIR.exists():
-        try:
-            shutil.rmtree(LipExtractor.config.MP4_TEMP_DIR)
-            logger.info(f"Temporary MP4 conversion directory '{LipExtractor.config.MP4_TEMP_DIR}' cleared for a fresh run.")
-        except OSError as e:
-            logger.warning(f"Could not clear temporary MP4 directory '{LipExtractor.config.MP4_TEMP_DIR}': {e}")
-
-
-    # --- Section 2: LipExtractor Initialization ---
+    # --- Section 2: Initialization ---
     print_section_header("2. Initializing LipExtractor")
-    logger.info("Creating an instance of LipExtractor. It will automatically use the current configuration.")
-    extractor = LipExtractor()
-    logger.info("LipExtractor instance created successfully.")
+    try:
+        extractor = LipExtractor()
+        logger.info("LipExtractor initialized successfully with custom configuration.")
+    except Exception as e:
+        logger.error(f"Failed to initialize LipExtractor: {e}")
+        return
 
-    # --- Section 3: Input Video and Output Path Setup ---
+    # --- Section 3: Input and Output Paths ---
     print_section_header("3. Setting Up Input and Output Paths")
+    
+    # IMPORTANT: Place your video file in the project's root directory or provide a full path.
+    input_video_path =  "bbafzp.mpg" #"your_video.mpg"  # <--- CHANGE THIS TO YOUR VIDEO FILE
+    output_npy_directory = "output_data"
+    
+    # The output .npy file will be named based on the video file stem.
+    output_npy_path = os.path.join(output_npy_directory, os.path.splitext(os.path.basename(input_video_path))[0] + ".npy")
+    
+    logger.info(f"Input video: '{input_video_path}'")
+    logger.info(f"Output will be saved to: '{output_npy_path}'")
 
-    # Define the path to the input video.
-    # For this example, place a short video file (e.g., 'bbar8a.mpg' or 'swwz9a.mp4')
-    # in the 'examples' directory, next to this script.
-    input_video_path = Path("bbafzp.mpg") # !!! IMPORTANT: CHANGE THIS TO YOUR VIDEO FILE NAME (e.g., 'my_mpg_video.mpg') !!!
+    # Clean up previous output directories for a fresh run
+    debug_dir = LipExtractor.config.DEBUG_OUTPUT_DIR
+    if LipExtractor.config.SAVE_DEBUG_FRAMES and os.path.exists(debug_dir):
+        shutil.rmtree(debug_dir)
+        logger.info(f"Cleared debug directory: '{debug_dir}'")
     
-    if not input_video_path.exists():
-        logger.error(f"Error: Video file '{input_video_path.name}' not found.")
-        logger.error(f"Please place a video file (e.g., 'bbar8a.mpg' or 'my_video.mp4') in the '{Path(__file__).parent}' directory, or update 'input_video_path'.")
-        sys.exit(1)
-    
-    # Define the path for the output .npy file.
-    # The output directory 'output_data' will be created if it doesn't exist.
-    output_npy_directory = Path("./output_data")
-    output_npy_filename = input_video_path.stem + ".npy" # Naming from video's stem (e.g., 'bbar8a.npy')
-    output_npy_path = output_npy_directory / output_npy_filename
-    
-    logger.info(f"Input video: '{input_video_path.name}'")
-    logger.info(f"Output .npy file will be saved to: '{output_npy_path}' if extraction is successful.")
+    if not os.path.exists(output_npy_directory):
+        os.makedirs(output_npy_directory)
 
-    # --- Section 4: Performing Lip Frame Extraction ---
+    # --- Section 4: Extraction ---
     print_section_header("4. Starting Lip Frame Extraction")
-    logger.info(f"Extracting lip frames from '{input_video_path.name}'. This may take a moment...")
     
-    extracted_frames = extractor.extract_lip_frames(
-        video_path=input_video_path,
-        output_npy_path=output_npy_path
-    )
-
-    if extracted_frames is not None:
-        logger.info(f"\nExtraction successful! Total extracted frames: {extracted_frames.shape[0]}")
-        logger.info(f"Dimensions of each extracted frame: {extracted_frames.shape[1]}x{extracted_frames.shape[2]}x{extracted_frames.shape[3]} (HWC, RGB)")
-
-        # --- Section 5: Post-Extraction Verification ---
-        print_section_header("5. Post-Extraction Verification")
-        
-        # Check for completely black frames in the final output
-        # (These indicate frames where detection or cropping utterly failed)
-        num_black_frames = sum(1 for frame in extracted_frames if np.sum(frame) == 0)
-        if num_black_frames > 0:
-            logger.warning(f"{num_black_frames} completely black frames found in the output. "
-                            "This might indicate issues during extraction, or frames where no valid lip region could be generated.")
-        else:
-            logger.info("No completely black frames found in the output. This indicates robust extraction for all frames.")
-
-
-        # Demonstrate loading the .npy file (to confirm it saved correctly)
-        logger.info(f"\nAttempting to load the saved .npy file from '{output_npy_path}'...")
-        loaded_frames = LipExtractor.extract_npy(output_npy_path)
-
-        if loaded_frames is not None:
-            logger.info(f"Successfully loaded {loaded_frames.shape[0]} frames from {output_npy_path}.")
-            if loaded_frames.shape[0] > 0:
-                logger.info(f"First loaded frame shape: {loaded_frames[0].shape}")
-                # Optional: Display the first extracted frame using OpenCV
-                # You might need to adjust color channels if OpenCV expects BGR (pylipextractor outputs RGB)
-                # cv2.imshow("First Extracted Lip Frame (RGB)", cv2.cvtColor(loaded_frames[0], cv2.COLOR_RGB2BGR))
-                # cv2.waitKey(0)
-                # cv2.destroyAllWindows()
-                # logger.info("First frame displayed. Close the window to continue.")
-            else:
-                logger.warning("Loaded NPY file is empty.")
-        else:
-            logger.error(f"Failed to load NPY file from '{output_npy_path}'. There might have been an issue during saving.")
-
-        # --- Section 6: Converting NPY to Image Files ---
-        print_section_header("6. Converting .npy to Individual Image Files")
-        logger.info("To visually inspect all extracted frames as individual image files (e.g., PNGs),")
-        logger.info(f"please run the separate utility script: `python {Path('save_npy_frames_to_images.py').name}`.")
-        logger.info("This script will convert the .npy file into a sequence of images in a specified directory.")
-
+    if not os.path.exists(input_video_path):
+        logger.warning(f"Input video not found at '{input_video_path}'.")
+        logger.warning("Please place a video file in the root directory and update 'input_video_path'.")
     else:
-        logger.error("Lip frame extraction failed or the video clip was rejected (e.g., too many invalid frames or no faces detected).")
+        try:
+            extracted_frames = extractor.extract_lip_frames(
+                video_path=input_video_path,
+                output_npy_path=output_npy_path
+            )
 
-    logger.info("\nExample script finished. Thank you for using pylipextractor!")
+            # --- Section 5: Verification ---
+            print_section_header("5. Verifying the Output")
+            if extracted_frames is not None:
+                logger.info("Extraction successful!")
+                logger.info(f"  - Extracted {extracted_frames.shape[0]} frames.")
+                logger.info(f"  - Frame dimensions: {extracted_frames.shape[1]}x{extracted_frames.shape[2]}")
+                
+                # Verify the saved file
+                if os.path.exists(output_npy_path):
+                    loaded_frames = np.load(output_npy_path)
+                    logger.info(f"  - Successfully loaded '{output_npy_path}' with {loaded_frames.shape[0]} frames.")
+                else:
+                    logger.error("  - Output file was not saved.")
+            else:
+                logger.error("Lip frame extraction failed. Check logs for details.")
+        except Exception as e:
+            logger.error(f"An error occurred during extraction: {e}")
+
+    logger.info("\nExample finished.")
 
 if __name__ == "__main__":
     main()
