@@ -25,7 +25,6 @@ class LipExtractionConfig:
     LIP_PADDING_BOTTOM_PX = 0
 
     # --- General Processing Settings ---
-    NUM_CPU_CORES = 5 # Number of CPU cores for parallel processing (if implemented in batch mode).
     # Renamed: Now represents max allowed percentage of ANY problematic frame (not just black)
     MAX_PROBLEMATIC_FRAMES_PERCENTAGE = 15.0 
 
