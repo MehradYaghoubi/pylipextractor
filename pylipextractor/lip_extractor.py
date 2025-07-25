@@ -187,6 +187,17 @@ class LipExtractor:
         cv2.imwrite(str(debug_dir / f"{debug_type}_{frame_idx:04d}.png"), display_frame_bgr)
 
 
+    @staticmethod
+    def _is_hw_encoder_available(encoder: str) -> bool:
+        """
+        Checks if a specific hardware encoder is available in FFmpeg.
+        """
+        try:
+            result = subprocess.run(['ffmpeg', '-encoders'], capture_output=True, text=True, check=True)
+            return encoder in result.stdout
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            return False
+
     def _apply_ema_smoothing(self, current_bbox: Optional[np.ndarray]) -> np.ndarray:
         """
         Applies Exponential Moving Average (EMA) to bounding box coordinates.
@@ -246,23 +257,32 @@ class LipExtractor:
         filename_without_ext = input_filepath.stem
         output_filepath = output_directory / f"{filename_without_ext}.mp4"
 
-        # FFmpeg command for converting to MP4 with H.264 video and AAC audio
-        ffmpeg_command = [
-            'ffmpeg',
-            '-i', str(input_filepath),
-            '-c:v', 'libx264',
-            '-preset', 'veryfast',
-            '-crf', '23',
-            '-c:a', 'aac',
-            '-b:a', '128k',
-            '-y',
-            '-loglevel', 'quiet', # Suppress FFmpeg console output
-            str(output_filepath)
-        ]
+        # Determine the encoder based on the configuration
+        device = self.config.HW_ACCELERATION_DEVICE.lower()
+        encoder = 'libx264'
+        preset = 'veryfast'
 
-        logger.info(f"Attempting to convert '{input_filepath.name}' to MP4...") 
+        if device == 'cuda' or (device == 'auto' and self._is_hw_encoder_available('h264_nvenc')):
+            if self._is_hw_encoder_available('h264_nvenc'):
+                encoder = 'h264_nvenc'
+                preset = 'p6'
+                logger.info("Using NVIDIA GPU (h264_nvenc) for hardware-accelerated video conversion.")
+            else:
+                logger.warning("NVIDIA GPU (h264_nvenc) not available. Falling back to CPU (libx264).")
+                encoder = 'libx264'
+                preset = 'veryfast'
+        else:
+            logger.info("Using CPU (libx264) for video conversion.")
+
+        # FFmpeg command for converting to MP4 with H.264 video and AAC audio
+        ffmpeg_command = (
+            f"ffmpeg -i \"{input_filepath}\" -c:v {encoder} -preset {preset} "
+            f"-crf 0 -an -y -loglevel quiet \"{output_filepath}\""
+        )
+
+        logger.info(f"Attempting to convert '{input_filepath.name}' to MP4...")
         try:
-            subprocess.run(ffmpeg_command, check=True, capture_output=True, text=True)
+            subprocess.run(ffmpeg_command, check=True, capture_output=True, text=True, shell=True)
             logger.info(f"Conversion successful: '{output_filepath.name}'.") 
             return output_filepath
         except FileNotFoundError:

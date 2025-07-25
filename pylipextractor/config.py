@@ -53,8 +53,9 @@ class LipExtractionConfig:
     BLACK_OUT_NON_LIP_AREAS = False
 
     # --- New FFmpeg Conversion Options ---
-    CONVERT_TO_MP4_IF_NEEDED: bool = False  # Set to True to enable automatic conversion
+    CONVERT_TO_MP4_IF_NEEDED: bool = True  # Set to True to enable automatic conversion
     MP4_TEMP_DIR: Path = Path("temp_mp4_conversions") # Directory for temporary MP4 files
+    HW_ACCELERATION_DEVICE: str = "cuda" # Device for hardware acceleration ('auto', 'cuda', 'cpu')
     # --- End New FFmpeg Conversion Options ---
 
     # --- Output Organization Settings (placeholder for future, currently no effect) ---

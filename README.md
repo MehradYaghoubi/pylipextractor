@@ -10,7 +10,7 @@ For detailed information about the package, its features, and how to use them, p
 - **Temporal Smoothing:** Applies an Exponential Moving Average (EMA) filter for smooth and consistent lip crops.
 - **Illumination Normalization:** Includes an optional CLAHE filter to normalize video brightness.
 - **Flexible Configuration:** Offers a wide range of customizable settings.
-- **Built-in Video Conversion:** Can automatically convert videos to a compatible MP4 format using FFmpeg.
+- **Customizable Hardware Acceleration:** Choose your preferred processing device (`auto`, `cuda`, or `cpu`) for video conversion. The package leverages NVIDIA GPU acceleration (if available) for faster processing and uses lossless compression to ensure no quality is lost.
 
 ## Demo
 

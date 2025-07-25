@@ -110,7 +110,18 @@ The package uses histogram matching to normalize the illumination of the video f
 
 ### Video Conversion
 
-PyLipExtractor can automatically convert videos to a compatible MP4 format using FFmpeg. This is particularly useful for handling videos in formats like MPG, which can sometimes cause issues with video processing libraries.
+PyLipExtractor automatically converts videos to a compatible MP4 format using FFmpeg. This is particularly useful for handling videos in formats like MPG, which can sometimes cause issues with video processing libraries like PyAV.
+
+#### Customizable Hardware Acceleration
+You can control the device used for video conversion via the `HW_ACCELERATION_DEVICE` configuration option.
+- **`'auto'` (default):** The package will automatically detect and use NVIDIA's `h264_nvenc` hardware encoder if available. If not, it will fall back to the CPU-based `libx264` encoder.
+- **`'cuda'`:** Forces the use of the NVIDIA `h264_nvenc` encoder. If it's not available, the process will fall back to the CPU.
+- **`'cpu'`:** Forces the use of the CPU-based `libx264` encoder, even if a GPU is available.
+
+This flexibility allows you to optimize performance based on your hardware and specific needs.
+
+#### Lossless Compression
+To ensure that no quality is lost during this conversion, PyLipExtractor uses **lossless compression** (`-crf 0`). This guarantees that the video data remains identical to the original source, preserving all details while improving compatibility.
 
 ## Examples
 
