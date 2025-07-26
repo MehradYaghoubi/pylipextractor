@@ -8,7 +8,7 @@ For detailed information about the package, its features, and how to use them, p
 
 - **Accurate & Stable Lip Detection:** Utilizes MediaPipe Face Mesh for precise landmark detection.
 - **Temporal Smoothing:** Applies an Exponential Moving Average (EMA) filter for smooth and consistent lip crops.
-- **Illumination Normalization:** Includes an optional CLAHE filter to normalize video brightness.
+- **Illumination Normalization:** Includes an optional histogram matching filter to normalize video brightness.
 - **Flexible Configuration:** Offers a wide range of customizable settings.
 - **Customizable Hardware Acceleration:** Choose your preferred processing device (`auto`, `cuda`, or `cpu`) for video conversion. The package leverages NVIDIA GPU acceleration (if available) for faster processing and uses lossless compression to ensure no quality is lost.
 
@@ -39,10 +39,12 @@ video_path = "path/to/your/video.mp4"
 output_path = "output/lip_frames.npy"
 
 # Extract the lip frames
-lip_frames = extractor.extract_lip_frames(video_path, output_path)
+extracted_frames, rtf_value = extractor.extract_lip_frames(video_path, output_path)
 
-if lip_frames is not None:
-    print(f"Successfully extracted {len(lip_frames)} frames.")
+if extracted_frames is not None:
+    print(f"Successfully extracted {len(extracted_frames)} frames.")
+    if rtf_value is not None:
+        print(f"Real-Time Factor (RTF): {rtf_value:.4f}")
 ```
 
 ## Documentation

@@ -136,13 +136,13 @@ def main():
     print_section_header("3. Setting Up Input and Output Paths")
 
     # Define the path to the input video.
-    # For this example, place a short video file (e.g., 'bbar8a.mpg' or 'swwz9a.mp4')
-    # in the 'examples' directory, next to this script.
-    input_video_path = Path("tima.mp4") # !!! IMPORTANT: CHANGE THIS TO YOUR VIDEO FILE NAME (e.g., 'my_mpg_video.mpg') !!!
+    # !!! IMPORTANT: REPLACE "path/to/your/video.mp4" WITH THE ACTUAL PATH TO YOUR VIDEO FILE. !!!
+    # For this example, you can place a short video file in the 'examples' directory.
+    input_video_path = Path("path/to/your/video.mp4")
     
     if not input_video_path.exists():
-        logger.error(f"Error: Video file '{input_video_path.name}' not found.")
-        logger.error(f"Please place a video file (e.g., 'bbar8a.mpg' or 'my_video.mp4') in the '{Path(__file__).parent}' directory, or update 'input_video_path'.")
+        logger.error(f"Error: Video file not found at '{input_video_path}'.")
+        logger.error("Please update the 'input_video_path' variable in this script to point to your video file.")
         sys.exit(1)
     
     # Define the path for the output .npy file.

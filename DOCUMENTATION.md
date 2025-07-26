@@ -58,10 +58,12 @@ video_path = "path/to/your/video.mp4"
 output_path = "output/lip_frames.npy"
 
 # Extract the lip frames
-lip_frames = extractor.extract_lip_frames(video_path, output_path)
+extracted_frames, rtf_value = extractor.extract_lip_frames(video_path, output_path)
 
-if lip_frames is not None:
-    print(f"Successfully extracted {len(lip_frames)} frames.")
+if extracted_frames is not None:
+    print(f"Successfully extracted {len(extracted_frames)} frames.")
+    if rtf_value is not None:
+        print(f"Real-Time Factor (RTF): {rtf_value:.4f}")
 ```
 
 ## Configuration
@@ -81,7 +83,8 @@ PyLipExtractor is highly configurable. You can change the default settings by mo
 - `BLACK_OUT_NON_LIP_AREAS`: Whether to black out the areas outside the lip region in the output frames. (Default: `False`)
 - `INCLUDE_LANDMARKS_ON_FINAL_OUTPUT`: Whether to draw the detected lip landmarks on the final output frames. This is useful for debugging and visualization. (Default: `False`)
 - `CALCULATE_RTF`: Set to True to calculate and log the Real-Time Factor. (Default: `True`)
--`PROFILE_CODE`: Set to True to profile the code and save the results to a file named lip_extraction.prof. (Default: `True`)
+- `PROFILE_CODE`: Set to True to profile the code and save the results to a file named lip_extraction.prof. (Default: `True`)
+- `REFINE_LANDMARKS`: Set to `True` for more accurate landmark detection, but slower processing. (Default: `False`)
 
 ### Fine-Tuning Parameters
 
@@ -116,8 +119,8 @@ PyLipExtractor automatically converts videos to a compatible MP4 format using FF
 
 #### Customizable Hardware Acceleration
 You can control the device used for video conversion via the `HW_ACCELERATION_DEVICE` configuration option.
-- **`'auto'` (default):** The package will automatically detect and use NVIDIA's `h264_nvenc` hardware encoder if available. If not, it will fall back to the CPU-based `libx264` encoder.
-- **`'cuda'`:** Forces the use of the NVIDIA `h264_nvenc` encoder. If it's not available, the process will fall back to the CPU.
+- **`'cuda'` (default):** Forces the use of the NVIDIA `h264_nvenc` encoder. If it's not available, the process will fall back to the CPU.
+- **`'auto'`:** The package will automatically detect and use NVIDIA's `h264_nvenc` hardware encoder if available. If not, it will fall back to the CPU-based `libx264` encoder.
 - **`'cpu'`:** Forces the use of the CPU-based `libx264` encoder, even if a GPU is available.
 
 This flexibility allows you to optimize performance based on your hardware and specific needs.
@@ -135,10 +138,12 @@ This example shows the most basic usage of the package, with default settings.
 from pylipextractor.lip_extractor import LipExtractor
 
 extractor = LipExtractor()
-lip_frames = extractor.extract_lip_frames("video.mp4", "output.npy")
+extracted_frames, rtf_value = extractor.extract_lip_frames("video.mp4", "output.npy")
 
-if lip_frames is not None:
-    print(f"Extracted {len(lip_frames)} frames.")
+if extracted_frames is not None:
+    print(f"Extracted {len(extracted_frames)} frames.")
+    if rtf_value is not None:
+        print(f"Real-Time Factor (RTF): {rtf_value:.4f}")
 ```
 
 ### Custom Configuration
@@ -151,14 +156,16 @@ from pylipextractor.lip_extractor import LipExtractor
 # Customize the configuration
 LipExtractor.config.IMG_H = 80
 LipExtractor.config.IMG_W = 120
-LipExtractor.config.APPLY_CLAHE = False
+LipExtractor.config.APPLY_HISTOGRAM_MATCHING = False
 LipExtractor.config.LIP_PROPORTIONAL_MARGIN_Y = 0.3
 
 extractor = LipExtractor()
-lip_frames = extractor.extract_lip_frames("video.mp4", "output.npy")
+extracted_frames, rtf_value = extractor.extract_lip_frames("video.mp4", "output.npy")
 
-if lip_frames is not None:
-    print(f"Extracted {len(lip_frames)} frames with custom settings.")
+if extracted_frames is not None:
+    print(f"Extracted {len(extracted_frames)} frames with custom settings.")
+    if rtf_value is not None:
+        print(f"Real-Time Factor (RTF): {rtf_value:.4f}")
 ```
 Accessing RTF and Profiling Data
 The extract_lip_frames method now returns a tuple: (extracted_frames, rtf_value). You can use the rtf_value to perform further analysis, such as calculating the average RTF across multiple videos.
@@ -208,6 +215,19 @@ else:
 # import pstats
 # p = pstats.Stats('lip_extraction.prof')
 # p.strip_dirs().sort_stats('cumulative').print_stats(10) # Prints top 10 functions by cumulative time
+```
+
+### Loading Saved Frames
+
+You can easily load the extracted frames from a `.npy` file using the `extract_npy` static method:
+
+```python
+from pylipextractor.lip_extractor import LipExtractor
+
+loaded_frames = LipExtractor.extract_npy("output.npy")
+
+if loaded_frames is not None:
+    print(f"Loaded {len(loaded_frames)} frames.")
 ```
 
 ## Contributing
