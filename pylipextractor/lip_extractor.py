@@ -243,8 +243,8 @@ class LipExtractor:
         return self.ema_smoothed_bbox.astype(np.int32)
 
 
-    @staticmethod
-    def _convert_video_to_mp4(input_filepath: Path, output_directory: Path) -> Optional[Path]:
+    # REMOVE THE @staticmethod DECORATOR
+    def _convert_video_to_mp4(self, input_filepath: Path, output_directory: Path) -> Optional[Path]:
         """
         Converts a video file to MP4 format using FFmpeg.
         
@@ -299,7 +299,7 @@ class LipExtractor:
         except Exception as e:
             logger.error(f"An unexpected error occurred during FFmpeg conversion of '{input_filepath.name}': {e}") 
             return None
-
+        
     def extract_lip_frames(self, video_path: Union[str, Path], output_npy_path: Optional[Union[str, Path]] = None) -> Optional[np.ndarray]:
         """
         Extracst and processes lip frames from a video.
