@@ -13,7 +13,7 @@ import time
 import cProfile
 import pstats
 from typing import Tuple, Optional, List, Union
-import logging 
+import logging
 
 def _histogram_matching(src, ref):
     """
@@ -243,7 +243,7 @@ class LipExtractor:
         return self.ema_smoothed_bbox.astype(np.int32)
 
 
-    # REMOVE THE @staticmethod DECORATOR
+    # REMOVED @staticmethod decorator
     def _convert_video_to_mp4(self, input_filepath: Path, output_directory: Path) -> Optional[Path]:
         """
         Converts a video file to MP4 format using FFmpeg.
@@ -300,9 +300,9 @@ class LipExtractor:
             logger.error(f"An unexpected error occurred during FFmpeg conversion of '{input_filepath.name}': {e}") 
             return None
         
-    def extract_lip_frames(self, video_path: Union[str, Path], output_npy_path: Optional[Union[str, Path]] = None) -> Optional[np.ndarray]:
+    def extract_lip_frames(self, video_path: Union[str, Path], output_npy_path: Optional[Union[str, Path]] = None) -> Tuple[Optional[np.ndarray], Optional[float]]:
         """
-        Extracst and processes lip frames from a video.
+        Extracts and processes lip frames from a video.
         Uses PyAV for efficient video reading and MediaPipe for accurate facial landmark detection.
         
         Args:
@@ -312,13 +312,16 @@ class LipExtractor:
                                                           frames are only returned, not saved.
             
         Returns:
-            Optional[np.ndarray]: A NumPy array of processed lip frames in RGB format
-                                  (shape: NUM_FRAMES x IMG_H x IMG_W x 3).
-                                  Returns `None` if an error occurs during processing or
-                                  if the extracted clip is deemed invalid (e.g., too many problematic frames).
+            Tuple[Optional[np.ndarray], Optional[float]]: A tuple containing:
+                                                            - NumPy array of processed lip frames in RGB format
+                                                              (shape: NUM_FRAMES x IMG_H x IMG_W x 3), or `None`.
+                                                            - The calculated Real-Time Factor (RTF) as a float, or `None`.
+                                                          Returns `None, None` if an error occurs during processing or
+                                                          if the extracted clip is deemed invalid (e.g., too many problematic frames).
         """
         original_video_path = Path(video_path) 
         current_video_path = original_video_path 
+        rtf = None # Initialize rtf to None for all paths
 
         # --- NEW: Optional MP4 Conversion ---
         converted_temp_mp4_path = None
@@ -337,7 +340,7 @@ class LipExtractor:
 
         if not current_video_path.exists():
             logger.error(f"Video file not found at '{current_video_path}'. Processing stopped.")
-            return None
+            return None, None # Changed: return None, None
 
         # --- RTF Calculation Initialization ---
         if self.config.CALCULATE_RTF:
@@ -352,14 +355,18 @@ class LipExtractor:
             container = av.open(str(current_video_path))
             if self.config.CALCULATE_RTF:
                 video_duration_seconds = container.duration / 1000000  # Duration in seconds
-        except av.AVError as e:
+        except AVError as e: # Changed: Used imported AVError
             logger.error(f"Error opening video '{current_video_path.name}' with PyAV: {e}. Processing stopped.")
-            return None
+            return None, None # Changed: return None, None
+        except Exception as e: # Added: Catch other potential exceptions during container opening
+            logger.error(f"An unexpected error occurred while opening video '{current_video_path.name}': {e}. Processing stopped.")
+            return None, None # Changed: return None, None
+
 
         if not container.streams.video:
             logger.error(f"No video stream found in '{current_video_path.name}'. Processing stopped.") 
             container.close()
-            return None
+            return None, None # Changed: return None, None
             
         video_stream = container.streams.video[0]
 
@@ -385,7 +392,7 @@ class LipExtractor:
                 ref_frame_av = next(container.decode(video=0))
                 ref_frame = ref_frame_av.to_rgb().to_ndarray()
                 container.seek(0)
-            except (StopIteration, av.AVError):
+            except (StopIteration, AVError): # Changed: Used imported AVError
                 logger.warning("Could not get reference frame for histogram matching. Histogram matching will be disabled.")
                 self.config.APPLY_HISTOGRAM_MATCHING = False
 
@@ -610,8 +617,8 @@ class LipExtractor:
                     logger.warning(f"Could not remove temporary MP4 file '{converted_temp_mp4_path.name}': {e}") 
 
         if not processed_frames_temp_list:
-            logger.warning(f"No frames could be processed from video '{current_video_path.name}'. Returning `None`.") 
-            return None
+            logger.warning(f"No frames could be processed from video '{current_video_path.name}'. Returning `None, None`.") 
+            return None, None # Changed: return None, None
 
         final_processed_np_frames = np.array(processed_frames_temp_list, dtype=np.uint8)
 
@@ -635,8 +642,8 @@ class LipExtractor:
         # Final check on problematic frames percentage
         if total_output_frames == 0 or (total_output_frames > 0 and (num_problematic_frames / total_output_frames) * 100 > self.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE): 
             percentage_problematic_frames = (num_problematic_frames / total_output_frames) * 100 if total_output_frames > 0 else 100
-            logger.error(f"Clip '{original_video_path.name}' rejected: {percentage_problematic_frames:.2f}% problematic frames (exceeds {self.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE}% allowed). Returning None.") 
-            return None
+            logger.error(f"Clip '{original_video_path.name}' rejected: {percentage_problematic_frames:.2f}% problematic frames (exceeds {self.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE}% allowed). Returning None, None.") 
+            return None, None # Changed: return None, None
         elif num_problematic_frames > 0:
             percentage_problematic_frames = (num_problematic_frames / total_output_frames) * 100
             logger.info(f"Clip '{original_video_path.name}': {percentage_problematic_frames:.2f}% problematic frames found. Clip retained.") 
@@ -657,6 +664,9 @@ class LipExtractor:
                 logger.info(f"RTF Calculation: Video Duration: {video_duration_seconds:.2f}s, Processing Time: {processing_time:.2f}s, RTF: {rtf:.4f}")
             else:
                 logger.warning("RTF Calculation: Could not determine video duration. RTF cannot be calculated.")
+                rtf = None
+        else:
+            rtf = None    
 
         if self.config.PROFILE_CODE:
             profiler.disable()
@@ -664,7 +674,7 @@ class LipExtractor:
             stats.dump_stats('lip_extraction.prof')
             logger.info("Profiling results saved to 'lip_extraction.prof'")
 
-        return final_processed_np_frames
+        return final_processed_np_frames, rtf # Changed: return both frames and rtf
 
     @staticmethod
     def extract_npy(npy_path: Union[str, Path]) -> Optional[np.ndarray]:

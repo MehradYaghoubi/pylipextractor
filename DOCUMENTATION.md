@@ -80,6 +80,8 @@ PyLipExtractor is highly configurable. You can change the default settings by mo
 - `CONVERT_TO_MP4_IF_NEEDED`: Whether to automatically convert non-MP4 videos to a compatible MP4 format using FFmpeg. (Default: `True`)
 - `BLACK_OUT_NON_LIP_AREAS`: Whether to black out the areas outside the lip region in the output frames. (Default: `False`)
 - `INCLUDE_LANDMARKS_ON_FINAL_OUTPUT`: Whether to draw the detected lip landmarks on the final output frames. This is useful for debugging and visualization. (Default: `False`)
+- `CALCULATE_RTF`: Set to True to calculate and log the Real-Time Factor. (Default: `True`)
+-`PROFILE_CODE`: Set to True to profile the code and save the results to a file named lip_extraction.prof. (Default: `True`)
 
 ### Fine-Tuning Parameters
 
@@ -157,6 +159,55 @@ lip_frames = extractor.extract_lip_frames("video.mp4", "output.npy")
 
 if lip_frames is not None:
     print(f"Extracted {len(lip_frames)} frames with custom settings.")
+```
+Accessing RTF and Profiling Data
+The extract_lip_frames method now returns a tuple: (extracted_frames, rtf_value). You can use the rtf_value to perform further analysis, such as calculating the average RTF across multiple videos.
+
+```python
+from pylipextractor.lip_extractor import LipExtractor
+from pathlib import Path
+import numpy as np
+
+extractor = LipExtractor()
+all_video_paths = [
+    Path("video1.mp4"),
+    Path("video2.mpg"),
+    Path("video3.mov"),
+    # Add more video paths here
+]
+
+collected_rtf_values = []
+
+for video_path in all_video_paths:
+    print(f"Processing video: {video_path.name}")
+    # Set output_npy_path to None if you don't want to save .npy for each video
+    extracted_frames, rtf_value = extractor.extract_lip_frames(
+        video_path=video_path,
+        output_npy_path=None # Or specify a path like Path(f"output_data/{video_path.stem}.npy")
+    )
+    
+    if rtf_value is not None:
+        collected_rtf_values.append(rtf_value)
+        print(f"  RTF for {video_path.name}: {rtf_value:.4f}")
+    else:
+        print(f"  RTF not calculated for {video_path.name}.")
+
+if collected_rtf_values:
+    average_rtf = np.mean(collected_rtf_values)
+    print(f"\n--- RTF Analysis ---")
+    print(f"Collected RTF values: {collected_rtf_values}")
+    print(f"Average RTF across {len(collected_rtf_values)} videos: {average_rtf:.4f}")
+else:
+    print("\nNo RTF values were collected.")
+
+# Regarding profiling:
+# If LipExtractor.config.PROFILE_CODE is True (which is the default),
+# a file named 'lip_extraction.prof' will be generated in the current working directory
+# after each call to extract_lip_frames.
+# You can analyze this file using Python's pstats module:
+# import pstats
+# p = pstats.Stats('lip_extraction.prof')
+# p.strip_dirs().sort_stats('cumulative').print_stats(10) # Prints top 10 functions by cumulative time
 ```
 
 ## Contributing

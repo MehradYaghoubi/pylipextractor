@@ -138,7 +138,7 @@ def main():
     # Define the path to the input video.
     # For this example, place a short video file (e.g., 'bbar8a.mpg' or 'swwz9a.mp4')
     # in the 'examples' directory, next to this script.
-    input_video_path = Path("bbafzp.mpg") # !!! IMPORTANT: CHANGE THIS TO YOUR VIDEO FILE NAME (e.g., 'my_mpg_video.mpg') !!!
+    input_video_path = Path("tima.mp4") # !!! IMPORTANT: CHANGE THIS TO YOUR VIDEO FILE NAME (e.g., 'my_mpg_video.mpg') !!!
     
     if not input_video_path.exists():
         logger.error(f"Error: Video file '{input_video_path.name}' not found.")
@@ -158,30 +158,52 @@ def main():
     print_section_header("4. Starting Lip Frame Extraction")
     logger.info(f"Extracting lip frames from '{input_video_path.name}'. This may take a moment...")
     
-    extracted_frames = extractor.extract_lip_frames(
+    # Changed: Unpack both extracted_frames and rtf_value
+    extracted_frames, rtf_value = extractor.extract_lip_frames(
         video_path=input_video_path,
         output_npy_path=output_npy_path
     )
 
+    # --- Section 5: Post-Extraction Actions and RTF Display ---
+    print_section_header("5. Post-Extraction Actions and RTF Display")
     if extracted_frames is not None:
-        logger.info(f"\nExtraction successful! Total extracted frames: {extracted_frames.shape[0]}")
+        logger.info(f"Extraction successful! Total extracted frames: {extracted_frames.shape[0]}")
         logger.info(f"Dimensions of each extracted frame: {extracted_frames.shape[1]}x{extracted_frames.shape[2]}x{extracted_frames.shape[3]} (HWC, RGB)")
 
-        # --- Section 5: Post-Extraction Verification ---
-        print_section_header("5. Post-Extraction Verification")
-        
-        # Check for completely black frames in the final output
-        # (These indicate frames where detection or cropping utterly failed)
-        num_black_frames = sum(1 for frame in extracted_frames if np.sum(frame) == 0)
-        if num_black_frames > 0:
-            logger.warning(f"{num_black_frames} completely black frames found in the output. "
-                            "This might indicate issues during extraction, or frames where no valid lip region could be generated.")
+        # Display the RTF value
+        if rtf_value is not None:
+            logger.info(f"Real-Time Factor (RTF) for '{input_video_path.name}': {rtf_value:.4f}")
         else:
-            logger.info("No completely black frames found in the output. This indicates robust extraction for all frames.")
+            logger.info(f"RTF for '{input_video_path.name}' not calculated (either disabled or video duration was zero).")
 
+        # Optional: Demonstrate collecting RTF for multiple videos and calculating average
+        logger.info("\n--- Example: Collecting RTF for multiple videos ---")
+        # In a real scenario, you would loop through a list of video paths
+        # For demonstration, we'll simulate adding this video's RTF to a list
+        
+        all_rtf_values = []
+        if rtf_value is not None:
+            all_rtf_values.append(rtf_value)
+        
+        # Simulate processing another video (you would replace this with actual video paths)
+        # For example:
+        # video_path_2 = Path("another_video.mp4")
+        # if video_path_2.exists():
+        #     logger.info(f"Processing another video: '{video_path_2.name}'...")
+        #     _, rtf_value_2 = extractor.extract_lip_frames(video_path=video_path_2, output_npy_path=None)
+        #     if rtf_value_2 is not None:
+        #         all_rtf_values.append(rtf_value_2)
 
-        # Demonstrate loading the .npy file (to confirm it saved correctly)
+        if all_rtf_values:
+            average_rtf = np.mean(all_rtf_values)
+            logger.info(f"Collected RTF values: {all_rtf_values}")
+            logger.info(f"Average RTF across processed videos: {average_rtf:.4f}")
+        else:
+            logger.info("No RTF values collected to calculate an average.")
+
+        # Optional: Load the saved .npy file to verify
         logger.info(f"\nAttempting to load the saved .npy file from '{output_npy_path}'...")
+        # The call to extract_npy is already correct as LipExtractor.extract_npy
         loaded_frames = LipExtractor.extract_npy(output_npy_path)
 
         if loaded_frames is not None:
