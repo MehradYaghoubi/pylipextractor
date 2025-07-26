@@ -57,6 +57,12 @@ class LipExtractionConfig:
     HW_ACCELERATION_DEVICE: str = "cuda" # Device for hardware acceleration ('auto', 'cuda', 'cpu')
     # --- End New FFmpeg Conversion Options ---
 
+    # --- Real-Time Factor (RTF) Calculation ---
+    CALCULATE_RTF: bool = True # Set to True to calculate and log the Real-Time Factor
+
+    # --- MediaPipe Settings ---
+    REFINE_LANDMARKS: bool = False # Set to True for more accurate landmark detection, but slower processing
+
     # --- Output Organization Settings (placeholder for future, currently no effect) ---
     DEFAULT_OUTPUT_BASE_DIR = Path("output_data") # Default directory for saving extracted NPYs
     ORGANIZE_OUTPUT_BY_VIDEO_NAME = True # If True, will save NPYs in subfolders based on video name

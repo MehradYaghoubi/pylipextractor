@@ -9,6 +9,7 @@ from pathlib import Path
 import warnings
 import math
 import subprocess
+import time
 from typing import Tuple, Optional, List, Union
 import logging 
 
@@ -117,12 +118,12 @@ class LipExtractor:
         if cls._mp_face_mesh_instance is None:
             cls._mp_face_mesh_instance = mp.solutions.face_mesh.FaceMesh(
                 static_image_mode=False,
-                max_num_faces=1, # Assume one dominant face in the video
+                max_num_faces=1,  # Assume one dominant face in the video
                 min_detection_confidence=0.5,
                 min_tracking_confidence=0.5,
-                refine_landmarks=True # Use refined landmarks for better accuracy
+                refine_landmarks=cls.config.REFINE_LANDMARKS
             )
-            logger.debug(f"MediaPipe Face Mesh model loaded for process {os.getpid()}.") # Changed to debug
+            logger.debug(f"MediaPipe Face Mesh model loaded for process {os.getpid()}.")
 
     @staticmethod
     def _is_black_frame(frame_np: np.ndarray) -> bool:
@@ -329,17 +330,24 @@ class LipExtractor:
                 current_video_path = original_video_path 
 
         if not current_video_path.exists():
-            logger.error(f"Video file not found at '{current_video_path}'. Processing stopped.") 
+            logger.error(f"Video file not found at '{current_video_path}'. Processing stopped.")
             return None
+
+        # --- RTF Calculation Initialization ---
+        if self.config.CALCULATE_RTF:
+            start_time = time.time()
+            video_duration_seconds = 0.0
 
         processed_frames_temp_list = []
         # --- Reset EMA state for each new video ---
-        self.ema_smoothed_bbox = None 
+        self.ema_smoothed_bbox = None
 
         try:
-            container = av.open(str(current_video_path)) 
+            container = av.open(str(current_video_path))
+            if self.config.CALCULATE_RTF:
+                video_duration_seconds = container.duration / 1000000  # Duration in seconds
         except av.AVError as e:
-            logger.error(f"Error opening video '{current_video_path.name}' with PyAV: {e}. Processing stopped.") 
+            logger.error(f"Error opening video '{current_video_path.name}' with PyAV: {e}. Processing stopped.")
             return None
 
         if not container.streams.video:
@@ -630,9 +638,19 @@ class LipExtractor:
         # Save to .npy file if a path is provided
         if output_npy_path:
             output_npy_path = Path(output_npy_path)
-            output_npy_path.parent.mkdir(parents=True, exist_ok=True) 
+            output_npy_path.parent.mkdir(parents=True, exist_ok=True)
             np.save(output_npy_path, final_processed_np_frames)
-            logger.info(f"Extracted frames saved to '{output_npy_path}'.") 
+            logger.info(f"Extracted frames saved to '{output_npy_path}'.")
+
+        # --- RTF Calculation ---
+        if self.config.CALCULATE_RTF:
+            end_time = time.time()
+            processing_time = end_time - start_time
+            if video_duration_seconds > 0:
+                rtf = processing_time / video_duration_seconds
+                logger.info(f"RTF Calculation: Video Duration: {video_duration_seconds:.2f}s, Processing Time: {processing_time:.2f}s, RTF: {rtf:.4f}")
+            else:
+                logger.warning("RTF Calculation: Could not determine video duration. RTF cannot be calculated.")
 
         return final_processed_np_frames
 

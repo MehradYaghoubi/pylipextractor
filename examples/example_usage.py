@@ -14,7 +14,7 @@ os.environ['GLOG_minloglevel'] = '2'
 # In a larger application, this might be done in a separate utility or entry point.
 # Set level to INFO to see general progress, or DEBUG to see more detailed internal messages.
 # INFO, WARNING, ERROR, CRITICAL
-logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 # Get a logger for this specific module
 logger = logging.getLogger(__name__)
 
