@@ -65,7 +65,7 @@ def main():
 
     # Example: Override some default settings for this specific run
     logger.info("\n--- Overriding Default Settings for this run ---")
-    LipExtractor.config.SAVE_DEBUG_FRAMES = True # Set to True to save debug images
+    LipExtractor.config.SAVE_DEBUG_FRAMES = False # Set to True to save debug images
     LipExtractor.config.MAX_DEBUG_FRAMES = 20    # Limit debug frames saved
     LipExtractor.config.INCLUDE_LANDMARKS_ON_FINAL_OUTPUT = False # Don't draw landmarks on final output
     LipExtractor.config.APPLY_HISTOGRAM_MATCHING = False      # Apply illumination normalization
@@ -138,7 +138,7 @@ def main():
     # Define the path to the input video.
     # For this example, place a short video file (e.g., 'bbar8a.mpg' or 'swwz9a.mp4')
     # in the 'examples' directory, next to this script.
-    input_video_path = Path("tima.mp4") # !!! IMPORTANT: CHANGE THIS TO YOUR VIDEO FILE NAME (e.g., 'my_mpg_video.mpg') !!!
+    input_video_path = Path("") # !!! IMPORTANT: CHANGE THIS TO YOUR VIDEO FILE NAME (e.g., 'my_mpg_video.mpg') !!!
     
     if not input_video_path.exists():
         logger.error(f"Error: Video file '{input_video_path.name}' not found.")

@@ -36,7 +36,7 @@ class LipExtractionConfig:
     # --- Debugging & Output Customization Settings ---
     DEBUG_OUTPUT_DIR = Path("./lip_extraction_debug") # Directory to save debug frames
     MAX_DEBUG_FRAMES = 20 # Maximum number of debug frames to save per video.
-    SAVE_DEBUG_FRAMES = True # Set to True to save intermediate debug frames.
+    SAVE_DEBUG_FRAMES = False # Set to True to save intermediate debug frames.
     
     # If True, MediaPipe lip landmarks will be drawn on the final extracted lip frames
     # (i.e., the frames saved in the .npy file and later converted to images).
@@ -62,6 +62,9 @@ class LipExtractionConfig:
 
     # --- MediaPipe Settings ---
     REFINE_LANDMARKS: bool = False # Set to True for more accurate landmark detection, but slower processing
+
+    # --- Profiling Settings ---
+    PROFILE_CODE: bool = True # Set to True to profile the code and save the results to a file
 
     # --- Output Organization Settings (placeholder for future, currently no effect) ---
     DEFAULT_OUTPUT_BASE_DIR = Path("output_data") # Default directory for saving extracted NPYs

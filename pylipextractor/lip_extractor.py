@@ -10,6 +10,8 @@ import warnings
 import math
 import subprocess
 import time
+import cProfile
+import pstats
 from typing import Tuple, Optional, List, Union
 import logging 
 
@@ -259,7 +261,7 @@ class LipExtractor:
         output_filepath = output_directory / f"{filename_without_ext}.mp4"
 
         # Determine the encoder based on the configuration
-        device = self.config.HW_ACCELERATION_DEVICE.lower()
+        device = self.config.HW_ACCELERATION_DEVICE.lower() # Normalize to lowercase
         encoder = 'libx264'
         preset = 'veryfast'
 
@@ -328,6 +330,10 @@ class LipExtractor:
             else:
                 logger.warning(f"MP4 conversion failed for '{original_video_path.name}'. Attempting to process original file.") 
                 current_video_path = original_video_path 
+
+        if self.config.PROFILE_CODE:
+            profiler = cProfile.Profile()
+            profiler.enable()
 
         if not current_video_path.exists():
             logger.error(f"Video file not found at '{current_video_path}'. Processing stopped.")
@@ -651,6 +657,12 @@ class LipExtractor:
                 logger.info(f"RTF Calculation: Video Duration: {video_duration_seconds:.2f}s, Processing Time: {processing_time:.2f}s, RTF: {rtf:.4f}")
             else:
                 logger.warning("RTF Calculation: Could not determine video duration. RTF cannot be calculated.")
+
+        if self.config.PROFILE_CODE:
+            profiler.disable()
+            stats = pstats.Stats(profiler).sort_stats('cumulative')
+            stats.dump_stats('lip_extraction.prof')
+            logger.info("Profiling results saved to 'lip_extraction.prof'")
 
         return final_processed_np_frames
 
