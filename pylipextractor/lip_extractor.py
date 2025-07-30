@@ -77,8 +77,6 @@ LIPS_MESH_LANDMARKS_INDICES = sorted(list(set([
 # Additional landmarks for expanded bounding box
 NOSE_BOTTOM_LANDMARK_INDEX = 2
 CHIN_BOTTOM_LANDMARK_INDEX = 200
-# LEFT_CHEEK_LANDMARK_INDEX = 58
-# RIGHT_CHEEK_LANDMARK_INDEX = 288
 
 # Import MainConfig here so LipExtractor can manage it as a class-level attribute
 from pylipextractor.config import MainConfig, LipExtractionConfig 
@@ -90,9 +88,6 @@ class LipExtractor:
     This class crops and resizes lip frames, returning them as a NumPy array.
     It also provides utilities for loading previously saved NPY files.
     """
-    # Class-level attribute to hold MediaPipe model instance, initialized once for all objects
-    _mp_face_mesh_instance = None 
-
     # Class-level attribute to hold the configuration.
     # Users can access and modify this directly: LipExtractor.config.IMG_H = ...
     config: LipExtractionConfig = MainConfig().lip_extraction 
@@ -100,32 +95,23 @@ class LipExtractor:
     def __init__(self):
         """
         Initializes the LipExtractor.
-        Configuration is managed by the class-level attribute `LipExtractor.config`.
+        A new, independent MediaPipe FaceMesh model is created for each instance
+        to ensure thread and process safety.
         """
-        # Ensure MediaPipe model is loaded/initialized for this process
-        self._initialize_mediapipe_if_not_set()
-        # Assign the class-level MediaPipe instance to the object for convenient access
-        self.mp_face_mesh = LipExtractor._mp_face_mesh_instance
+        # Each instance gets its own independent MediaPipe model.
+        # This prevents state conflicts in multiprocessing environments.
+        self.mp_face_mesh = mp.solutions.face_mesh.FaceMesh(
+            static_image_mode=False,
+            max_num_faces=1,
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5,
+            refine_landmarks=self.config.REFINE_LANDMARKS
+        )
+        logger.debug(f"A new MediaPipe Face Mesh model instance created for process {os.getpid()}.")
 
         # --- Changes for EMA Smoothing ---
         self.ema_smoothed_bbox = None # To store the last smoothed bounding box for EMA
         # --- End Changes for EMA Smoothing ---
-
-    @classmethod
-    def _initialize_mediapipe_if_not_set(cls):
-        """
-        Initializes the MediaPipe Face Mesh model if it hasn't been initialized yet.
-        This ensures the model is loaded only once across all instances and processes.
-        """
-        if cls._mp_face_mesh_instance is None:
-            cls._mp_face_mesh_instance = mp.solutions.face_mesh.FaceMesh(
-                static_image_mode=False,
-                max_num_faces=1,  # Assume one dominant face in the video
-                min_detection_confidence=0.5,
-                min_tracking_confidence=0.5,
-                refine_landmarks=cls.config.REFINE_LANDMARKS
-            )
-            logger.debug(f"MediaPipe Face Mesh model loaded for process {os.getpid()}.")
 
     @staticmethod
     def _is_black_frame(frame_np: np.ndarray) -> bool:
@@ -340,7 +326,7 @@ class LipExtractor:
 
         if not current_video_path.exists():
             logger.error(f"Video file not found at '{current_video_path}'. Processing stopped.")
-            return None, None # Changed: return None, None
+            return None, None
 
         # --- RTF Calculation Initialization ---
         if self.config.CALCULATE_RTF:
@@ -355,18 +341,18 @@ class LipExtractor:
             container = av.open(str(current_video_path))
             if self.config.CALCULATE_RTF:
                 video_duration_seconds = container.duration / 1000000  # Duration in seconds
-        except AVError as e: # Changed: Used imported AVError
+        except av.AVError as e: 
             logger.error(f"Error opening video '{current_video_path.name}' with PyAV: {e}. Processing stopped.")
-            return None, None # Changed: return None, None
-        except Exception as e: # Added: Catch other potential exceptions during container opening
+            return None, None 
+        except Exception as e: 
             logger.error(f"An unexpected error occurred while opening video '{current_video_path.name}': {e}. Processing stopped.")
-            return None, None # Changed: return None, None
+            return None, None 
 
 
         if not container.streams.video:
             logger.error(f"No video stream found in '{current_video_path.name}'. Processing stopped.") 
             container.close()
-            return None, None # Changed: return None, None
+            return None, None 
             
         video_stream = container.streams.video[0]
 
@@ -392,7 +378,7 @@ class LipExtractor:
                 ref_frame_av = next(container.decode(video=0))
                 ref_frame = ref_frame_av.to_rgb().to_ndarray()
                 container.seek(0)
-            except (StopIteration, AVError): # Changed: Used imported AVError
+            except (StopIteration, av.AVError): 
                 logger.warning("Could not get reference frame for histogram matching. Histogram matching will be disabled.")
                 self.config.APPLY_HISTOGRAM_MATCHING = False
 
@@ -470,31 +456,11 @@ class LipExtractor:
                             x2_proposed = lip_centroid_x + target_bbox_width / 2
                             y2_proposed = lip_centroid_y + target_bbox_height / 2
 
-                            # Clamp coordinates to frame boundaries and adjust to maintain size if possible
-                            x1_final = int(x1_proposed)
-                            y1_final = int(y1_proposed)
-                            x2_final = int(x2_proposed)
-                            y2_final = int(y2_proposed)
-
-                            # Shift box if it goes out of bounds
-                            if x1_final < 0:
-                                x2_final += abs(x1_final)
-                                x1_final = 0
-                            if y1_final < 0:
-                                y2_final += abs(y1_final)
-                                y1_final = 0
-                            if x2_final > original_frame_width:
-                                x1_final -= (x2_final - original_frame_width)
-                                x2_final = original_frame_width
-                            if y2_final > original_frame_height:
-                                y1_final -= (y2_final - original_frame_height)
-                                y2_final = original_frame_height
-
-                            # Final clamping (important after shifts to ensure values are within limits)
-                            x1_final = max(0, min(original_frame_width, x1_final))
-                            y1_final = max(0, min(original_frame_height, y1_final))
-                            x2_final = max(0, min(original_frame_width, x2_final))
-                            y2_final = max(0, min(original_frame_height, y2_final))
+                            # Clamp coordinates to frame boundaries
+                            x1_final = int(max(0, x1_proposed))
+                            y1_final = int(max(0, y1_proposed))
+                            x2_final = int(min(original_frame_width, x2_proposed))
+                            y2_final = int(min(original_frame_height, y2_proposed))
 
                             # Ensure the final box has positive dimensions
                             if (x2_final - x1_final) > 0 and (y2_final - y1_final) > 0:
@@ -618,7 +584,7 @@ class LipExtractor:
 
         if not processed_frames_temp_list:
             logger.warning(f"No frames could be processed from video '{current_video_path.name}'. Returning `None, None`.") 
-            return None, None # Changed: return None, None
+            return None, None 
 
         final_processed_np_frames = np.array(processed_frames_temp_list, dtype=np.uint8)
 
@@ -643,7 +609,7 @@ class LipExtractor:
         if total_output_frames == 0 or (total_output_frames > 0 and (num_problematic_frames / total_output_frames) * 100 > self.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE): 
             percentage_problematic_frames = (num_problematic_frames / total_output_frames) * 100 if total_output_frames > 0 else 100
             logger.error(f"Clip '{original_video_path.name}' rejected: {percentage_problematic_frames:.2f}% problematic frames (exceeds {self.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE}% allowed). Returning None, None.") 
-            return None, None # Changed: return None, None
+            return None, None 
         elif num_problematic_frames > 0:
             percentage_problematic_frames = (num_problematic_frames / total_output_frames) * 100
             logger.info(f"Clip '{original_video_path.name}': {percentage_problematic_frames:.2f}% problematic frames found. Clip retained.") 
@@ -674,7 +640,7 @@ class LipExtractor:
             stats.dump_stats('lip_extraction.prof')
             logger.info("Profiling results saved to 'lip_extraction.prof'")
 
-        return final_processed_np_frames, rtf # Changed: return both frames and rtf
+        return final_processed_np_frames, rtf 
 
     @staticmethod
     def extract_npy(npy_path: Union[str, Path]) -> Optional[np.ndarray]:

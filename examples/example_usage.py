@@ -86,10 +86,10 @@ def main():
     # NEW: Enable/Disable blacking out non-lip areas. Set to True to see the effect.
     LipExtractor.config.BLACK_OUT_NON_LIP_AREAS = False
     
-    LipExtractor.config.IMG_H = 60              # Uncomment to change output height
-    LipExtractor.config.IMG_W = 90             # Uncomment to change output width
+    LipExtractor.config.IMG_H = 50              # Uncomment to change output height
+    LipExtractor.config.IMG_W = 75             # Uncomment to change output width
     LipExtractor.config.LIP_PROPORTIONAL_MARGIN_X = 0.0 # Adjust horizontal margin
-    LipExtractor.config.LIP_PROPORTIONAL_MARGIN_Y = 0.00 # Adjust vertical margin
+    LipExtractor.config.LIP_PROPORTIONAL_MARGIN_Y = 0.0 # Adjust vertical margin
     LipExtractor.config.CALCULATE_RTF = False # Disable RTF calculation for this run
     # LipExtractor.config.MAX_FRAMES = 100        # Uncomment to limit the total number of frames processed
 
@@ -139,7 +139,7 @@ def main():
     # Define the path to the input video.
     # !!! IMPORTANT: REPLACE "path/to/your/video.mp4" WITH THE ACTUAL PATH TO YOUR VIDEO FILE. !!!
     # For this example, you can place a short video file in the 'examples' directory.
-    input_video_path = Path("bwak1a.mpg")
+    input_video_path = Path("bbbmza.mpg")
     
     if not input_video_path.exists():
         logger.error(f"Error: Video file not found at '{input_video_path}'.")

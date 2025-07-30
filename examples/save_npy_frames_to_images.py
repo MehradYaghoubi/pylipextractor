@@ -33,7 +33,7 @@ def main():
     # 1. Define the path to your input .npy file
     # Make sure this path points to the .npy file created by example_usage.py
     # This path now expects the NPY file to be named directly after the video (e.g., 'bbar8a.npy')
-    input_npy_path = Path("./output_data/bwak1a.npy") 
+    input_npy_path = Path("./output_data/bbbmza.npy") 
 
     # 2. Define the output directory for saving individual image frames
     output_images_dir = Path("./extracted_lip_images")

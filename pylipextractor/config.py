@@ -7,15 +7,15 @@ class LipExtractionConfig:
     Configuration for lip extraction and video processing parameters.
     """
     # --- Output frame dimensions ---
-    IMG_H = 48 # Desired height for the output lip frames
-    IMG_W = 96 # Desired width for the output lip frames
+    IMG_H = 50 # Desired height for the output lip frames
+    IMG_W = 75 # Desired width for the output lip frames
     MAX_FRAMES = None # Maximum frames to extract from a video. If None, extracts all frames.
 
     # --- Lip Cropping Settings ---
     # These margins are PROPORTIONAL to the tightly calculated lip bounding box.
     # Adjust these to expand/shrink the area around the detected lips.
     LIP_PROPORTIONAL_MARGIN_X = 0.0 # Horizontal margin as a proportion of lip width
-    LIP_PROPORTIONAL_MARGIN_Y = 0.00 # Vertical margin as a proportion of lip height
+    LIP_PROPORTIONAL_MARGIN_Y = 0.0 # Vertical margin as a proportion of lip height
     
     # These are fixed pixel paddings (applied AFTER proportional margins).
     # Use these for minor fine-tuning if needed.
