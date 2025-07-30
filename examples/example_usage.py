@@ -65,14 +65,14 @@ def main():
 
     # Example: Override some default settings for this specific run
     logger.info("\n--- Overriding Default Settings for this run ---")
-    LipExtractor.config.SAVE_DEBUG_FRAMES = False # Set to True to save debug images
+    LipExtractor.config.SAVE_DEBUG_FRAMES = True # Set to True to save debug images
     LipExtractor.config.MAX_DEBUG_FRAMES = 20    # Limit debug frames saved
     LipExtractor.config.INCLUDE_LANDMARKS_ON_FINAL_OUTPUT = False # Don't draw landmarks on final output
     LipExtractor.config.APPLY_HISTOGRAM_MATCHING = False      # Apply illumination normalization
     
     # Configure EMA Smoothing
     LipExtractor.config.APPLY_EMA_SMOOTHING = True # Enable EMA smoothing
-    LipExtractor.config.EMA_ALPHA = 0.3            # Set EMA smoothing factor (e.g., 0.2 for more smoothing)
+    LipExtractor.config.EMA_ALPHA = 0.2            # Set EMA smoothing factor (e.g., 0.2 for more smoothing)
 
     # Enable optional MP4 conversion for input videos that are not already MP4
     # This is highly recommended for MPG files or other problematic formats.
@@ -86,10 +86,11 @@ def main():
     # NEW: Enable/Disable blacking out non-lip areas. Set to True to see the effect.
     LipExtractor.config.BLACK_OUT_NON_LIP_AREAS = False
     
-    LipExtractor.config.IMG_H = 50              # Uncomment to change output height
-    LipExtractor.config.IMG_W = 65             # Uncomment to change output width
+    LipExtractor.config.IMG_H = 60              # Uncomment to change output height
+    LipExtractor.config.IMG_W = 90             # Uncomment to change output width
     LipExtractor.config.LIP_PROPORTIONAL_MARGIN_X = 0.0 # Adjust horizontal margin
-    LipExtractor.config.LIP_PROPORTIONAL_MARGIN_Y = 0.02 # Adjust vertical margin
+    LipExtractor.config.LIP_PROPORTIONAL_MARGIN_Y = 0.00 # Adjust vertical margin
+    LipExtractor.config.CALCULATE_RTF = False # Disable RTF calculation for this run
     # LipExtractor.config.MAX_FRAMES = 100        # Uncomment to limit the total number of frames processed
 
     logger.info(f"New SAVE_DEBUG_FRAMES setting: {LipExtractor.config.SAVE_DEBUG_FRAMES}")
@@ -138,7 +139,7 @@ def main():
     # Define the path to the input video.
     # !!! IMPORTANT: REPLACE "path/to/your/video.mp4" WITH THE ACTUAL PATH TO YOUR VIDEO FILE. !!!
     # For this example, you can place a short video file in the 'examples' directory.
-    input_video_path = Path("path/to/your/video.mp4")
+    input_video_path = Path("bwak1a.mpg")
     
     if not input_video_path.exists():
         logger.error(f"Error: Video file not found at '{input_video_path}'.")
