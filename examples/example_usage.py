@@ -81,7 +81,7 @@ def main():
 
     # Adjust the threshold for rejecting a video based on problematic frames
     # If more than this percentage of frames are black/undecipherable, the entire video will be rejected.
-    LipExtractor.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE = 10.0 # Example: Allow up to 10% problematic frames
+    LipExtractor.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE = 30.0 # Example: Allow up to 30% problematic frames
     
     # NEW: Enable/Disable blacking out non-lip areas. Set to True to see the effect.
     LipExtractor.config.BLACK_OUT_NON_LIP_AREAS = False

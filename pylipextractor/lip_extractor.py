@@ -44,7 +44,7 @@ def _histogram_matching(src, ref):
         j = 255
         while j >= 0 and src_cdf_normalized[i] < ref_cdf[j]:
             j -= 1
-        lookup_table[i] = j
+        lookup_table[i] = max(0, j)
 
     # Apply the lookup table to the Y channel of the source image
     src_y_matched = cv2.LUT(src_y, lookup_table)
@@ -67,7 +67,17 @@ warnings.filterwarnings("ignore", category=UserWarning, module="mediapipe")
 os.environ['GLOG_minloglevel'] = '2' # Suppress all GLOG messages below WARNING level.
 
 # Access the pre-defined lip connections from MediaPipe
-_LIP_CONNECTIONS = mp.solutions.face_mesh.FACEMESH_LIPS
+_LIP_CONNECTIONS = frozenset([
+    (61, 146), (146, 91), (91, 181), (181, 84), (84, 17),
+    (17, 314), (314, 405), (405, 321), (321, 375),
+    (375, 291), (61, 185), (185, 40), (40, 39), (39, 37),
+    (37, 0), (0, 267), (267, 269), (269, 270), (270, 409),
+    (409, 291), (78, 95), (95, 88), (88, 178), (178, 87),
+    (87, 14), (14, 317), (317, 402), (402, 318), (318, 324),
+    (324, 308), (78, 191), (191, 80), (80, 81), (81, 82),
+    (82, 13), (13, 312), (312, 311), (311, 310), (310, 415),
+    (415, 308)
+])
 
 # Extract all unique landmark indices involved in these connections
 LIPS_MESH_LANDMARKS_INDICES = sorted(list(set([
@@ -79,7 +89,7 @@ NOSE_BOTTOM_LANDMARK_INDEX = 2
 CHIN_BOTTOM_LANDMARK_INDEX = 200
 
 # Import MainConfig here so LipExtractor can manage it as a class-level attribute
-from pylipextractor.config import MainConfig, LipExtractionConfig 
+from pylipextractor.config import MainConfig, LipExtractionConfig
 
 
 class LipExtractor:
@@ -90,37 +100,84 @@ class LipExtractor:
     """
     # Class-level attribute to hold the configuration.
     # Users can access and modify this directly: LipExtractor.config.IMG_H = ...
-    config: LipExtractionConfig = MainConfig().lip_extraction 
+    config: LipExtractionConfig = MainConfig().lip_extraction
 
     def __init__(self):
         """
         Initializes the LipExtractor.
-        A new, independent MediaPipe FaceMesh model is created for each instance
+        A new, independent MediaPipe FaceLandmarker model is created for each instance
         to ensure thread and process safety.
         """
-        # Each instance gets its own independent MediaPipe model.
-        # This prevents state conflicts in multiprocessing environments.
-        self.mp_face_mesh = mp.solutions.face_mesh.FaceMesh(
-            static_image_mode=False,
-            max_num_faces=1,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5,
-            refine_landmarks=self.config.REFINE_LANDMARKS
-        )
-        logger.debug(f"A new MediaPipe Face Mesh model instance created for process {os.getpid()}.")
+        self._initialize_face_landmarker()
 
         # --- Changes for EMA Smoothing ---
         self.ema_smoothed_bbox = None # To store the last smoothed bounding box for EMA
         # --- End Changes for EMA Smoothing ---
 
+    def close(self):
+        """
+        Closes the MediaPipe landmarker and releases resources.
+        """
+        if hasattr(self, 'landmarker') and self.landmarker is not None:
+            try:
+                self.landmarker.close()
+                self.landmarker = None
+            except Exception:
+                pass
+
+    def __del__(self):
+        """
+        Destructor to ensure resources are cleaned up.
+        """
+        self.close()
+
+    def _initialize_face_landmarker(self):
+        """
+        Initializes the MediaPipe FaceLandmarker using the new Tasks API.
+        Downloads the model file if not already present.
+        """
+        import urllib.request
+
+        # Define cache directory for model file
+        cache_dir = Path.home() / ".cache" / "pylipextractor"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        model_path = cache_dir / "face_landmarker.task"
+
+        if not model_path.exists():
+            url = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task"
+            logger.info(f"Downloading MediaPipe Face Landmarker model to '{model_path}'...")
+            try:
+                urllib.request.urlretrieve(url, model_path)
+                logger.info("Download completed successfully.")
+            except Exception as e:
+                logger.error(f"Failed to download Face Landmarker model from '{url}': {e}")
+                raise RuntimeError(f"Could not download Face Landmarker model: {e}")
+
+        # Initialize the FaceLandmarker
+        BaseOptions = mp.tasks.BaseOptions
+        FaceLandmarker = mp.tasks.vision.FaceLandmarker
+        FaceLandmarkerOptions = mp.tasks.vision.FaceLandmarkerOptions
+        VisionRunningMode = mp.tasks.vision.RunningMode
+
+        options = FaceLandmarkerOptions(
+            base_options=BaseOptions(model_asset_path=str(model_path)),
+            running_mode=VisionRunningMode.VIDEO,
+            num_faces=1,
+            min_face_detection_confidence=0.5,
+            min_face_presence_confidence=0.5,
+            min_tracking_confidence=0.5
+        )
+        self.landmarker = FaceLandmarker.create_from_options(options)
+        logger.debug(f"A new MediaPipe Face Landmarker model instance created for process {os.getpid()}.")
+
     @staticmethod
     def _is_black_frame(frame_np: np.ndarray) -> bool:
         """
         Checks if a frame is completely black (all pixel values are zero).
-        
+
         Args:
             frame_np (np.ndarray): NumPy array representing the image frame.
-            
+
         Returns:
             bool: `True` if the frame is black or `None`/empty, otherwise `False`.
         """
@@ -131,7 +188,7 @@ class LipExtractor:
     def _debug_frame_processing(self, frame, frame_idx, debug_type, current_lip_bbox_val=None, mp_face_landmarks=None):
         """
         Saves debug frames at various stages of processing for visual inspection.
-        
+
         Args:
             frame (np.array): Image frame (assumed RGB format).
             frame_idx (int): Current frame index.
@@ -150,12 +207,15 @@ class LipExtractor:
         # Ensure frame is 3-channel for text overlay if it's grayscale
         if len(display_frame.shape) == 2: # If grayscale, convert to BGR for text overlay and saving
             display_frame = cv2.cvtColor(display_frame, cv2.COLOR_GRAY2BGR)
-        
+
         cv2.putText(display_frame, f"{debug_type.capitalize()} Frame {frame_idx}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
         if debug_type == 'landmarks' and mp_face_landmarks is not None:
             # Draw all detected face mesh landmarks (for general debug)
-            for lm_idx_all, lm in enumerate(mp_face_landmarks.landmark):
+            landmarks_list = mp_face_landmarks
+            if hasattr(mp_face_landmarks, 'landmark'):
+                landmarks_list = mp_face_landmarks.landmark
+            for lm_idx_all, lm in enumerate(landmarks_list):
                 x, y = int(lm.x * frame.shape[1]), int(lm.y * frame.shape[0])
                 color = (0, 255, 0) # Default green for all landmarks
                 if lm_idx_all in LIPS_MESH_LANDMARKS_INDICES or lm_idx_all in [NOSE_BOTTOM_LANDMARK_INDEX, CHIN_BOTTOM_LANDMARK_INDEX]:
@@ -166,13 +226,13 @@ class LipExtractor:
                 # Convert to int if it's a numpy array to avoid potential float issues with cv2.rectangle
                 x1, y1, x2, y2 = [int(val) for val in current_lip_bbox_val]
                 cv2.rectangle(display_frame, (x1, y1), (x2, y2), (0, 0, 255), 2) # Red rectangle for lip bbox
-        
+
         # Convert to BGR for OpenCV saving
         if len(display_frame.shape) == 3 and display_frame.shape[2] == 3: # Only convert if it's already RGB
             display_frame_bgr = cv2.cvtColor(display_frame, cv2.COLOR_RGB2BGR)
         else: # Otherwise, it might already be BGR or grayscale, keep as is
             display_frame_bgr = display_frame
-            
+
         cv2.imwrite(str(debug_dir / f"{debug_type}_{frame_idx:04d}.png"), display_frame_bgr)
 
 
@@ -191,7 +251,7 @@ class LipExtractor:
         """
         Applies Exponential Moving Average (EMA) to bounding box coordinates.
         The `ema_smoothed_bbox` attribute is used to maintain state across frames.
-        
+
         Args:
             current_bbox (np.ndarray, optional): Bounding box (x1, y1, x2, y2) for the current frame
                                                  as a NumPy array. `None` if no face/lip detected.
@@ -211,7 +271,7 @@ class LipExtractor:
                 default_bbox = np.array([0, 0, self.config.IMG_W, self.config.IMG_H], dtype=np.int32)
                 logger.debug(f"EMA: current_bbox is None and no previous smoothed_bbox, returning default black frame bbox: {default_bbox}")
                 return default_bbox
-        
+
         # Ensure current_bbox is a NumPy array for calculations
         current_bbox_np = np.array(current_bbox, dtype=np.float32)
         logger.debug(f"EMA: current_bbox_np: {current_bbox_np}")
@@ -225,7 +285,7 @@ class LipExtractor:
             self.ema_smoothed_bbox = (self.config.EMA_ALPHA * current_bbox_np +
                                       (1 - self.config.EMA_ALPHA) * self.ema_smoothed_bbox)
             logger.debug(f"EMA: Applying smoothing. Old: {self.ema_smoothed_bbox}, New (before round): {self.ema_smoothed_bbox}")
-        
+
         return self.ema_smoothed_bbox.astype(np.int32)
 
 
@@ -233,12 +293,12 @@ class LipExtractor:
     def _convert_video_to_mp4(self, input_filepath: Path, output_directory: Path) -> Optional[Path]:
         """
         Converts a video file to MP4 format using FFmpeg.
-        
+
         Args:
             input_filepath (Path): Path to the input video file.
             output_directory (Path): Directory where the MP4 output file will be saved.
                                      This directory will be created if it does not exist.
-                                     
+
         Returns:
             Optional[Path]: Path to the converted MP4 file, or `None` if conversion fails.
         """
@@ -272,31 +332,31 @@ class LipExtractor:
         logger.info(f"Attempting to convert '{input_filepath.name}' to MP4...")
         try:
             subprocess.run(ffmpeg_command, check=True, capture_output=True, text=True, shell=True)
-            logger.info(f"Conversion successful: '{output_filepath.name}'.") 
+            logger.info(f"Conversion successful: '{output_filepath.name}'.")
             return output_filepath
         except FileNotFoundError:
-            logger.error("FFmpeg not found. Please ensure FFmpeg is installed and added to your system's PATH to use video conversion. Skipping conversion.") 
+            logger.error("FFmpeg not found. Please ensure FFmpeg is installed and added to your system's PATH to use video conversion. Skipping conversion.")
             return None
         except subprocess.CalledProcessError as e:
-            logger.error(f"Error converting '{input_filepath.name}' with FFmpeg: {e}") 
-            logger.error(f"FFmpeg stdout: {e.stdout}") 
-            logger.error(f"FFmpeg stderr: {e.stderr}") 
+            logger.error(f"Error converting '{input_filepath.name}' with FFmpeg: {e}")
+            logger.error(f"FFmpeg stdout: {e.stdout}")
+            logger.error(f"FFmpeg stderr: {e.stderr}")
             return None
         except Exception as e:
-            logger.error(f"An unexpected error occurred during FFmpeg conversion of '{input_filepath.name}': {e}") 
+            logger.error(f"An unexpected error occurred during FFmpeg conversion of '{input_filepath.name}': {e}")
             return None
-        
+
     def extract_lip_frames(self, video_path: Union[str, Path], output_npy_path: Optional[Union[str, Path]] = None) -> Tuple[Optional[np.ndarray], Optional[float]]:
         """
         Extracts and processes lip frames from a video.
         Uses PyAV for efficient video reading and MediaPipe for accurate facial landmark detection.
-        
+
         Args:
             video_path (Union[str, Path]): Path to the input video file (e.g., MP4, MPG).
             output_npy_path (Union[str, Path], optional): Path to the .npy file where the extracted
                                                           lip frames will be saved. If `None`,
                                                           frames are only returned, not saved.
-            
+
         Returns:
             Tuple[Optional[np.ndarray], Optional[float]]: A tuple containing:
                                                             - NumPy array of processed lip frames in RGB format
@@ -305,20 +365,20 @@ class LipExtractor:
                                                           Returns `None, None` if an error occurs during processing or
                                                           if the extracted clip is deemed invalid (e.g., too many problematic frames).
         """
-        original_video_path = Path(video_path) 
-        current_video_path = original_video_path 
+        original_video_path = Path(video_path)
+        current_video_path = original_video_path
         rtf = None # Initialize rtf to None for all paths
 
         # --- NEW: Optional MP4 Conversion ---
         converted_temp_mp4_path = None
-        if self.config.CONVERT_TO_MP4_IF_NEEDED and original_video_path.suffix.lower() not in ['.mp4', '.mov']: 
-            logger.info(f"'{original_video_path.name}' is not in MP4/MOV format. Attempting conversion...") 
+        if self.config.CONVERT_TO_MP4_IF_NEEDED and original_video_path.suffix.lower() not in ['.mp4', '.mov']:
+            logger.info(f"'{original_video_path.name}' is not in MP4/MOV format. Attempting conversion...")
             converted_temp_mp4_path = self._convert_video_to_mp4(original_video_path, self.config.MP4_TEMP_DIR)
             if converted_temp_mp4_path:
                 current_video_path = converted_temp_mp4_path
             else:
-                logger.warning(f"MP4 conversion failed for '{original_video_path.name}'. Attempting to process original file.") 
-                current_video_path = original_video_path 
+                logger.warning(f"MP4 conversion failed for '{original_video_path.name}'. Attempting to process original file.")
+                current_video_path = original_video_path
 
         if self.config.PROFILE_CODE:
             profiler = cProfile.Profile()
@@ -341,19 +401,19 @@ class LipExtractor:
             container = av.open(str(current_video_path))
             if self.config.CALCULATE_RTF:
                 video_duration_seconds = container.duration / 1000000  # Duration in seconds
-        except av.AVError as e: 
+        except av.AVError as e:
             logger.error(f"Error opening video '{current_video_path.name}' with PyAV: {e}. Processing stopped.")
-            return None, None 
-        except Exception as e: 
+            return None, None
+        except Exception as e:
             logger.error(f"An unexpected error occurred while opening video '{current_video_path.name}': {e}. Processing stopped.")
-            return None, None 
+            return None, None
 
 
         if not container.streams.video:
-            logger.error(f"No video stream found in '{current_video_path.name}'. Processing stopped.") 
+            logger.error(f"No video stream found in '{current_video_path.name}'. Processing stopped.")
             container.close()
-            return None, None 
-            
+            return None, None
+
         video_stream = container.streams.video[0]
 
         # Determine the total number of frames to process
@@ -364,11 +424,11 @@ class LipExtractor:
                 if frames_from_av is not None and frames_from_av > 0:
                     total_frames_to_process = frames_from_av
                 else:
-                    total_frames_to_process = float('inf') 
+                    total_frames_to_process = float('inf')
             except Exception:
-                total_frames_to_process = float('inf') 
+                total_frames_to_process = float('inf')
 
-        logger.info(f"Processing video: '{current_video_path.name}' ({total_frames_to_process if total_frames_to_process != float('inf') else 'all available'} frames)...") 
+        logger.info(f"Processing video: '{current_video_path.name}' ({total_frames_to_process if total_frames_to_process != float('inf') else 'all available'} frames)...")
 
         # --- Get reference frame for histogram matching ---
         ref_frame = None
@@ -378,18 +438,18 @@ class LipExtractor:
                 ref_frame_av = next(container.decode(video=0))
                 ref_frame = ref_frame_av.to_rgb().to_ndarray()
                 container.seek(0)
-            except (StopIteration, av.AVError): 
+            except (StopIteration, av.AVError):
                 logger.warning("Could not get reference frame for histogram matching. Histogram matching will be disabled.")
                 self.config.APPLY_HISTOGRAM_MATCHING = False
 
-        num_problematic_frames = 0 
+        num_problematic_frames = 0
         black_frame = np.zeros((self.config.IMG_H, self.config.IMG_W, 3), dtype=np.uint8) # Define black frame once
 
         try:
             for frame_idx, frame_av in enumerate(container.decode(video=0)):
                 if total_frames_to_process != float('inf') and frame_idx >= total_frames_to_process:
-                    logger.debug(f"Max frames limit ({total_frames_to_process}) reached. Stopping video processing.") 
-                    break 
+                    logger.debug(f"Max frames limit ({total_frames_to_process}) reached. Stopping video processing.")
+                    break
 
                 current_frame_is_problematic = False
                 processed_lip_frame = black_frame.copy() # Initialize with a black frame, will be overwritten if successful
@@ -400,20 +460,32 @@ class LipExtractor:
 
                     if self.config.SAVE_DEBUG_FRAMES:
                         self._debug_frame_processing(image_rgb, frame_idx, 'original')
-                    
-                    results = self.mp_face_mesh.process(image_rgb) 
-                    
-                    raw_lip_bbox: Optional[np.ndarray] = None 
-                    mp_face_landmarks = None 
-                    
-                    if results.multi_face_landmarks:
-                        mp_face_landmarks = results.multi_face_landmarks[0]
-                        landmarks = mp_face_landmarks.landmark
+
+                    # Convert the frame received from OpenCV to a MediaPipe Image object
+                    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image_rgb)
+
+                    # Calculate timestamp in ms for the video frame, strictly increasing
+                    timestamp_ms = int(frame_av.time * 1000) if frame_av.time is not None else int(frame_idx * 40)
+                    if frame_idx == 0:
+                        self._last_timestamp_ms = timestamp_ms
+                    else:
+                        if timestamp_ms <= self._last_timestamp_ms:
+                            timestamp_ms = self._last_timestamp_ms + 1
+                        self._last_timestamp_ms = timestamp_ms
+
+                    results = self.landmarker.detect_for_video(mp_image, timestamp_ms)
+
+                    raw_lip_bbox: Optional[np.ndarray] = None
+                    mp_face_landmarks = None
+
+                    if results and results.face_landmarks:
+                        mp_face_landmarks = results.face_landmarks[0]
+                        landmarks = mp_face_landmarks
 
                         lip_x_coords = []
                         lip_y_coords = []
                         for idx in LIPS_MESH_LANDMARKS_INDICES:
-                            if idx < len(landmarks): 
+                            if idx < len(landmarks):
                                 lip_x_coords.append(landmarks[idx].x * original_frame_width)
                                 lip_y_coords.append(landmarks[idx].y * original_frame_height)
 
@@ -466,13 +538,13 @@ class LipExtractor:
                             if (x2_final - x1_final) > 0 and (y2_final - y1_final) > 0:
                                 raw_lip_bbox = np.array([x1_final, y1_final, x2_final, y2_final], dtype=np.int32)
                             else:
-                                logger.warning(f"Frame {frame_idx}: Calculated final bounding box has zero or negative dimensions after centering/adjustment. Marking as problematic.") 
+                                logger.warning(f"Frame {frame_idx}: Calculated final bounding box has zero or negative dimensions after centering/adjustment. Marking as problematic.")
                                 current_frame_is_problematic = True
                         else:
-                            logger.warning(f"Frame {frame_idx}: No lip coordinates found. Marking as problematic.") 
+                            logger.warning(f"Frame {frame_idx}: No lip coordinates found. Marking as problematic.")
                             current_frame_is_problematic = True
                     else:
-                        logger.warning(f"Frame {frame_idx}: No face detected. Marking as problematic.") 
+                        logger.warning(f"Frame {frame_idx}: No face detected. Marking as problematic.")
                         current_frame_is_problematic = True
 
                     # --- Apply temporal smoothing using EMA if enabled ---
@@ -492,9 +564,9 @@ class LipExtractor:
                     if not current_frame_is_problematic and smoothed_lip_bbox_np is not None and \
                        (smoothed_lip_bbox_np[2] > smoothed_lip_bbox_np[0]) and \
                        (smoothed_lip_bbox_np[3] > smoothed_lip_bbox_np[1]):
-                        
+
                         x1_smoothed, y1_smoothed, x2_smoothed, y2_smoothed = smoothed_lip_bbox_np.tolist()
-                        
+
                         # Ensure coordinates are within original frame bounds before cropping
                         x1_smoothed = max(0, min(original_frame_width, x1_smoothed))
                         y1_smoothed = max(0, min(original_frame_height, y1_smoothed))
@@ -507,27 +579,27 @@ class LipExtractor:
                             current_frame_is_problematic = True
                         else:
                             lip_cropped_frame = image_rgb[y1_smoothed:y2_smoothed, x1_smoothed:x2_smoothed]
-                            
+
                             current_crop_width = lip_cropped_frame.shape[1]
                             current_crop_height = lip_cropped_frame.shape[0]
 
                             if current_crop_width > self.config.IMG_W or current_crop_height > self.config.IMG_H:
                                 interpolation_method = cv2.INTER_AREA
                             else:
-                                interpolation_method = cv2.INTER_LANCZOS4 
-                            
+                                interpolation_method = cv2.INTER_LANCZOS4
+
                             final_resized_lip = cv2.resize(lip_cropped_frame, (self.config.IMG_W, self.config.IMG_H), interpolation=interpolation_method)
-                            
+
                             processed_lip_frame = final_resized_lip.copy()
 
                             if self.config.APPLY_HISTOGRAM_MATCHING and ref_frame is not None:
                                 processed_lip_frame = _histogram_matching(processed_lip_frame, ref_frame)
-                            
-                                    
+
+
                             if self.config.INCLUDE_LANDMARKS_ON_FINAL_OUTPUT and mp_face_landmarks and smoothed_lip_bbox_np is not None:
-                                x_offset_for_mapping = smoothed_lip_bbox_np[0] 
+                                x_offset_for_mapping = smoothed_lip_bbox_np[0]
                                 y_offset_for_mapping = smoothed_lip_bbox_np[1]
-                                
+
                                 width_cropped_for_mapping = smoothed_lip_bbox_np[2] - smoothed_lip_bbox_np[0]
                                 height_cropped_for_mapping = smoothed_lip_bbox_np[3] - smoothed_lip_bbox_np[1]
 
@@ -535,37 +607,40 @@ class LipExtractor:
                                     scale_x_to_output = self.config.IMG_W / width_cropped_for_mapping
                                     scale_y_to_output = self.config.IMG_H / height_cropped_for_mapping
 
+                                    landmarks_list = mp_face_landmarks
+                                    if hasattr(mp_face_landmarks, 'landmark'):
+                                        landmarks_list = mp_face_landmarks.landmark
                                     for lm_idx in LIPS_MESH_LANDMARKS_INDICES:
-                                        if lm_idx < len(mp_face_landmarks.landmark):
-                                            orig_x_px = mp_face_landmarks.landmark[lm_idx].x * original_frame_width
-                                            orig_y_px = mp_face_landmarks.landmark[lm_idx].y * original_frame_height
-                                            
+                                        if lm_idx < len(landmarks_list):
+                                            orig_x_px = landmarks_list[lm_idx].x * original_frame_width
+                                            orig_y_px = landmarks_list[lm_idx].y * original_frame_height
+
                                             relative_x_px = orig_x_px - x_offset_for_mapping
                                             relative_y_px = orig_y_px - y_offset_for_mapping
 
                                             final_x_lm = int(relative_x_px * scale_x_to_output)
                                             final_y_lm = int(relative_y_px * scale_y_to_output)
-                                            
+
                                             final_x_lm = max(0, min(self.config.IMG_W - 1, final_x_lm))
                                             final_y_lm = max(0, min(self.config.IMG_H - 1, final_y_lm))
-                                            
-                                            cv2.circle(processed_lip_frame, (final_x_lm, final_y_lm), 1, (0, 255, 0), -1) 
+
+                                            cv2.circle(processed_lip_frame, (final_x_lm, final_y_lm), 1, (0, 255, 0), -1)
                                 else:
                                     logger.warning(f"Frame {frame_idx}: Cropped dimensions for landmark mapping are invalid. Skipping landmark drawing.")
-                            
+
                     else: # This block is for when current_frame_is_problematic is True or smoothed_lip_bbox_np is invalid.
                         logger.warning(f"Frame {frame_idx}: Problematic frame (face/lip detection failed or invalid bounding box). Appending black frame.")
                         current_frame_is_problematic = True # Ensure it's marked problematic
 
                 except Exception as e:
-                    logger.warning(f"Unexpected error processing frame {frame_idx} from '{current_video_path.name}': {e}. Appending black frame.") 
-                    current_frame_is_problematic = True 
+                    logger.warning(f"Unexpected error processing frame {frame_idx} from '{current_video_path.name}': {e}. Appending black frame.", exc_info=True)
+                    current_frame_is_problematic = True
                     if self.config.APPLY_EMA_SMOOTHING:
                         self._apply_ema_smoothing(None) # Pass None to EMA to maintain continuity or drift
 
                 if current_frame_is_problematic:
                     processed_frames_temp_list.append(black_frame.copy())
-                    num_problematic_frames += 1 
+                    num_problematic_frames += 1
                     if self.config.SAVE_DEBUG_FRAMES:
                         self._debug_frame_processing(black_frame, frame_idx, 'black_generated')
                 else:
@@ -578,13 +653,13 @@ class LipExtractor:
             if converted_temp_mp4_path and converted_temp_mp4_path.exists():
                 try:
                     os.remove(str(converted_temp_mp4_path))
-                    logger.info(f"Cleaned up temporary MP4 file: '{converted_temp_mp4_path.name}'.") 
+                    logger.info(f"Cleaned up temporary MP4 file: '{converted_temp_mp4_path.name}'.")
                 except Exception as e:
-                    logger.warning(f"Could not remove temporary MP4 file '{converted_temp_mp4_path.name}': {e}") 
+                    logger.warning(f"Could not remove temporary MP4 file '{converted_temp_mp4_path.name}': {e}")
 
         if not processed_frames_temp_list:
-            logger.warning(f"No frames could be processed from video '{current_video_path.name}'. Returning `None, None`.") 
-            return None, None 
+            logger.warning(f"No frames could be processed from video '{current_video_path.name}'. Returning `None, None`.")
+            return None, None
 
         final_processed_np_frames = np.array(processed_frames_temp_list, dtype=np.uint8)
 
@@ -593,27 +668,27 @@ class LipExtractor:
             if final_processed_np_frames.shape[0] > self.config.MAX_FRAMES:
                 # If we processed more frames than MAX_FRAMES, truncate
                 final_processed_np_frames = final_processed_np_frames[:self.config.MAX_FRAMES]
-                logger.info(f"Video truncated to {self.config.MAX_FRAMES} frames as per configuration.") 
+                logger.info(f"Video truncated to {self.config.MAX_FRAMES} frames as per configuration.")
             elif final_processed_np_frames.shape[0] < self.config.MAX_FRAMES:
                 # If we processed fewer frames, pad with black frames
                 padding_needed = self.config.MAX_FRAMES - final_processed_np_frames.shape[0]
                 black_padding = np.zeros((padding_needed, self.config.IMG_H, self.config.IMG_W, 3), dtype=np.uint8)
                 final_processed_np_frames = np.concatenate((final_processed_np_frames, black_padding), axis=0)
                 num_problematic_frames += padding_needed # Account for padded black frames as problematic
-                logger.info(f"Video padded with {padding_needed} black frames to reach {self.config.MAX_FRAMES} frames as per configuration.") 
+                logger.info(f"Video padded with {padding_needed} black frames to reach {self.config.MAX_FRAMES} frames as per configuration.")
 
 
         total_output_frames = final_processed_np_frames.shape[0]
-        
+
         # Final check on problematic frames percentage
-        if total_output_frames == 0 or (total_output_frames > 0 and (num_problematic_frames / total_output_frames) * 100 > self.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE): 
+        if total_output_frames == 0 or (total_output_frames > 0 and (num_problematic_frames / total_output_frames) * 100 > self.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE):
             percentage_problematic_frames = (num_problematic_frames / total_output_frames) * 100 if total_output_frames > 0 else 100
-            logger.error(f"Clip '{original_video_path.name}' rejected: {percentage_problematic_frames:.2f}% problematic frames (exceeds {self.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE}% allowed). Returning None, None.") 
-            return None, None 
+            logger.error(f"Clip '{original_video_path.name}' rejected: {percentage_problematic_frames:.2f}% problematic frames (exceeds {self.config.MAX_PROBLEMATIC_FRAMES_PERCENTAGE}% allowed). Returning None, None.")
+            return None, None
         elif num_problematic_frames > 0:
             percentage_problematic_frames = (num_problematic_frames / total_output_frames) * 100
-            logger.info(f"Clip '{original_video_path.name}': {percentage_problematic_frames:.2f}% problematic frames found. Clip retained.") 
-        
+            logger.info(f"Clip '{original_video_path.name}': {percentage_problematic_frames:.2f}% problematic frames found. Clip retained.")
+
         # Save to .npy file if a path is provided
         if output_npy_path:
             output_npy_path = Path(output_npy_path)
@@ -632,7 +707,7 @@ class LipExtractor:
                 logger.warning("RTF Calculation: Could not determine video duration. RTF cannot be calculated.")
                 rtf = None
         else:
-            rtf = None    
+            rtf = None
 
         if self.config.PROFILE_CODE:
             profiler.disable()
@@ -640,7 +715,7 @@ class LipExtractor:
             stats.dump_stats('lip_extraction.prof')
             logger.info("Profiling results saved to 'lip_extraction.prof'")
 
-        return final_processed_np_frames, rtf 
+        return final_processed_np_frames, rtf
 
     @staticmethod
     def extract_npy(npy_path: Union[str, Path]) -> Optional[np.ndarray]:
@@ -655,13 +730,13 @@ class LipExtractor:
         """
         npy_path = Path(npy_path)
         if not npy_path.exists():
-            logger.error(f"NPY file not found at '{npy_path}'.") 
+            logger.error(f"NPY file not found at '{npy_path}'.")
             return None
-        
+
         try:
             data = np.load(npy_path)
-            logger.info(f"Successfully loaded NPY file from '{npy_path}'. Shape: {data.shape}") 
+            logger.info(f"Successfully loaded NPY file from '{npy_path}'. Shape: {data.shape}")
             return data
         except Exception as e:
-            logger.error(f"Error loading NPY file '{npy_path}': {e}") 
+            logger.error(f"Error loading NPY file '{npy_path}': {e}")
             return None
