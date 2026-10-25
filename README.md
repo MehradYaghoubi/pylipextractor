@@ -1,60 +1,82 @@
 # PyLipExtractor
 
-PyLipExtractor is a powerful and easy-to-use Python package for extracting lip regions from videos. It leverages the high-precision MediaPipe Face Mesh to accurately detect and crop the lip area, providing a stable and reliable tool for researchers and developers working on lip-reading, facial analysis, and other related fields.
+**PyLipExtractor** is an open-source Python toolkit for extracting aligned lip-region frames from video for **visual speech recognition (VSR), lip-reading research, and computer-vision experiments**. It uses MediaPipe Face Mesh to detect facial landmarks, then crops and stabilizes the mouth region across frames.
 
-For detailed information about the package, its features, and how to use them, please refer to the [**Full Documentation**](DOCUMENTATION.md).
+If you are searching for a Python lip-reading preprocessing tool, a MediaPipe lip cropper, or a video-to-mouth-frame pipeline for VSR, PyLipExtractor provides a configurable starting point.
 
-## Key Features
+[![PyPI version](https://img.shields.io/pypi/v/pylipextractor)](https://pypi.org/project/pylipextractor/)
+[![Python versions](https://img.shields.io/pypi/pyversions/pylipextractor)](https://pypi.org/project/pylipextractor/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-- **Accurate & Stable Lip Detection:** Utilizes MediaPipe Face Mesh for precise landmark detection.
-- **Temporal Smoothing:** Applies an Exponential Moving Average (EMA) filter for smooth and consistent lip crops.
-- **Illumination Normalization:** Includes an optional histogram matching filter to normalize video brightness.
-- **Flexible Configuration:** Offers a wide range of customizable settings.
-- **Customizable Hardware Acceleration:** Choose your preferred processing device (`auto`, `cuda`, or `cpu`) for video conversion. The package leverages NVIDIA GPU acceleration (if available) for faster processing and uses lossless compression to ensure no quality is lost.
+## What it does
 
-## Demo
+Given a video, PyLipExtractor detects the face and mouth landmarks and produces a sequence of cropped lip frames for downstream analysis or model training. It is a preprocessing utility: it does not transcribe speech or include a trained lip-reading model.
 
-https://github.com/user-attachments/assets/a6841309-3e4d-4b7e-bd0f-b56a5cab28e4
+### Features
 
-*Original video by Tima Miroshnichenko*
+- **MediaPipe Face Mesh landmarks** for mouth localization.
+- **Temporal smoothing** with an Exponential Moving Average (EMA) to reduce crop jitter.
+- **Optional illumination normalization** for more consistent frames.
+- **Configurable processing** for different video and research workflows.
+- **CPU, CUDA, or automatic device selection** for supported video conversion paths.
+- **Lossless video conversion** options to preserve source-frame quality.
 
-## Installation
+## Install
+
+Python 3.8 or newer is required.
 
 ```bash
-pip install pylipextractor
+python -m pip install pylipextractor
 ```
 
-## Quick Start
-
-Here is a basic example of how to use PyLipExtractor. For a more detailed and comprehensive example, please see `examples/example_usage.py`.
+## Quick start
 
 ```python
 from pylipextractor.lip_extractor import LipExtractor
 
-# Create a LipExtractor instance
 extractor = LipExtractor()
-
-# Specify the path to your video
-video_path = "path/to/your/video.mp4"
+video_path = "path/to/video.mp4"
 output_path = "output/lip_frames.npy"
 
-# Extract the lip frames
-extracted_frames, rtf_value = extractor.extract_lip_frames(video_path, output_path)
+frames, real_time_factor = extractor.extract_lip_frames(video_path, output_path)
 
-if extracted_frames is not None:
-    print(f"Successfully extracted {len(extracted_frames)} frames.")
-    if rtf_value is not None:
-        print(f"Real-Time Factor (RTF): {rtf_value:.4f}")
+if frames is not None:
+    print(f"Extracted {len(frames)} lip frames")
+    if real_time_factor is not None:
+        print(f"Real-time factor: {real_time_factor:.4f}")
 ```
+
+The API and configuration options may vary by release. See the usage example and full documentation for the version you install.
+
+## Demo
+
+A short demonstration of the lip-region extraction workflow:
+
+https://github.com/user-attachments/assets/a6841309-3e4d-4b7e-bd0f-b56a5cab28e4
+
+*Original video by Tima Miroshnichenko.*
 
 ## Documentation
 
-For a deep dive into all the features, configurations, and technical details, please read our [**Comprehensive Documentation**](DOCUMENTATION.md).
+- [Full documentation](DOCUMENTATION.md)
+- [Usage example](examples/example_usage.py)
+- [Changelog](CHANGELOG.md)
+- [Report a bug or request a feature](https://github.com/MehradYaghoubi/pylipextractor/issues)
+
+## Intended use
+
+PyLipExtractor is designed for researchers and developers preparing video inputs for visual speech recognition, lip-reading, and facial-video analysis. Review the source dataset's terms and obtain appropriate consent before processing video of people.
+
+## Citation and attribution
+
+If this package supports your work, please cite or link to the repository:
+
+> Mehrad Yaghoubi, PyLipExtractor, https://github.com/MehradYaghoubi/pylipextractor
 
 ## Contributing
 
-Contributions are welcome! Please see our [Contributing Guidelines](https://github.com/MehradYaghoubi/pylipextractor/blob/main/CONTRIBUTING.md) for more details.
+Contributions, bug reports, and feature requests are welcome. Please open an issue before proposing substantial changes.
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](https://github.com/MehradYaghoubi/pylipextractor/blob/main/LICENSE) file for details.
+PyLipExtractor is released under the [MIT License](LICENSE).
