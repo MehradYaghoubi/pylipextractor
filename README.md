@@ -60,7 +60,6 @@ https://github.com/user-attachments/assets/a6841309-3e4d-4b7e-bd0f-b56a5cab28e4
 
 - [Full documentation](DOCUMENTATION.md)
 - [Usage example](examples/example_usage.py)
-- [Changelog](CHANGELOG.md)
 - [Report a bug or request a feature](https://github.com/MehradYaghoubi/pylipextractor/issues)
 
 ## Intended use
