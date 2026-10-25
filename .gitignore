@@ -14,6 +14,7 @@ venv/
 output_data/
 lip_extraction_debug/
 *.npy
+*.prof
 !output_data/*.npy
 
 # IDE specific ignored files
