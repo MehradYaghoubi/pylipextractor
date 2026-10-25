@@ -16,7 +16,7 @@ class LipExtractionConfig:
     # Adjust these to expand/shrink the area around the detected lips.
     LIP_PROPORTIONAL_MARGIN_X = 0.0 # Horizontal margin as a proportion of lip width
     LIP_PROPORTIONAL_MARGIN_Y = 0.0 # Vertical margin as a proportion of lip height
-    
+
     # These are fixed pixel paddings (applied AFTER proportional margins).
     # Use these for minor fine-tuning if needed.
     LIP_PADDING_LEFT_PX = 0
@@ -26,7 +26,7 @@ class LipExtractionConfig:
 
     # --- General Processing Settings ---
     # Renamed: Now represents max allowed percentage of ANY problematic frame (not just black)
-    MAX_PROBLEMATIC_FRAMES_PERCENTAGE = 15.0 
+    MAX_PROBLEMATIC_FRAMES_PERCENTAGE = 15.0
 
     # Removed: SMOOTHING_WINDOW_SIZE is replaced by EMA_ALPHA for EMA smoothing
     # New: EMA Smoothing for Bounding Boxes
@@ -37,7 +37,7 @@ class LipExtractionConfig:
     DEBUG_OUTPUT_DIR = Path("./lip_extraction_debug") # Directory to save debug frames
     MAX_DEBUG_FRAMES = 20 # Maximum number of debug frames to save per video.
     SAVE_DEBUG_FRAMES = False # Set to True to save intermediate debug frames.
-    
+
     # If True, MediaPipe lip landmarks will be drawn on the final extracted lip frames
     # (i.e., the frames saved in the .npy file and later converted to images).
     # This is for visualization/debugging of the final output, not typically for model training.
@@ -60,8 +60,32 @@ class LipExtractionConfig:
     # --- Real-Time Factor (RTF) Calculation ---
     CALCULATE_RTF: bool = False # Set to True to calculate and log the Real-Time Factor
 
-    # --- MediaPipe Settings ---
-    REFINE_LANDMARKS: bool = False # Set to True for more accurate landmark detection, but slower processing
+    # --- MediaPipe FaceLandmarker Settings ---
+    FACE_LANDMARKER_MODEL_PATH = None
+    AUTO_DOWNLOAD_FACE_LANDMARKER: bool = True
+    FACE_LANDMARKER_MODEL_URL: str = (
+        "https://storage.googleapis.com/mediapipe-models/"
+        "face_landmarker/face_landmarker/float16/1/face_landmarker.task"
+    )
+    FACE_LANDMARKER_MODEL_DIR: Path = Path("~/.cache/pylipextractor").expanduser()
+
+    MIN_FACE_DETECTION_CONFIDENCE: float = 0.5
+    MIN_FACE_PRESENCE_CONFIDENCE: float = 0.5
+    MIN_TRACKING_CONFIDENCE: float = 0.5
+
+    # Landmarks Indices for Lip Region
+    LIPS_LANDMARK_INDICES = (
+        0, 11, 12, 13, 14, 15, 16, 17, 37, 39, 40, 61, 78, 80, 81, 82, 84, 87, 88,
+        91, 95, 146, 178, 181, 185, 191, 267, 269, 270, 291, 308, 310, 311, 312,
+        314, 317, 318, 321, 324, 375, 402, 405, 409, 415
+    )
+    NOSE_BOTTOM_LANDMARK_INDEX: int = 2
+    CHIN_BOTTOM_LANDMARK_INDEX: int = 200
+
+    # --- Temporal Frame Compression Settings ---
+    TEMPORAL_MERGE_ENABLED: bool = False
+    TEMPORAL_MERGE_METHOD: str = "mean"  # Options: "mean", "motion_weighted"
+    TEMPORAL_MERGE_SIZE: int = 4
 
     # --- Profiling Settings ---
     PROFILE_CODE: bool = True # Set to True to profile the code and save the results to a file
